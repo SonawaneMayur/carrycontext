@@ -1,0 +1,114 @@
+// @ts-check
+// Activity Bar panel: latest handoff, recent sessions per provider, and saved handoffs.
+const vscode = require('vscode');
+const path = require('path');
+const fs = require('fs');
+const { paths, loadState } = require('./core/handoff');
+const { getProvider } = require('./providers');
+const { ago, mtime } = require('./core/util');
+
+const SESSIONS_PER_PROVIDER = 5;
+
+class HandoffTree {
+  /** @param {() => string | undefined} cwd @param {() => import('./core/config').Config} config */
+  constructor(cwd, config) {
+    this.cwd = cwd;
+    this.config = config;
+    this._onDidChange = new vscode.EventEmitter();
+    this.onDidChangeTreeData = this._onDidChange.event;
+  }
+
+  refresh() {
+    this._onDidChange.fire(undefined);
+  }
+
+  /** @param {vscode.TreeItem} item */
+  getTreeItem(item) {
+    return item;
+  }
+
+  /** @param {vscode.TreeItem & {kind?: string}} [parent] */
+  async getChildren(parent) {
+    const dir = this.cwd();
+    if (!dir) return []; // shows the "open a folder" welcome view
+    if (!parent) return [this.latestItem(dir), group('Sessions', 'sessions', 'comment-discussion'), group('Saved handoffs', 'handoffs', 'archive')];
+    if (parent.kind === 'sessions') return this.sessionItems(dir);
+    if (parent.kind === 'handoffs') return this.handoffItems(dir);
+    return [];
+  }
+
+  latestItem(dir) {
+    const file = paths(dir).handoff;
+    if (!fs.existsSync(file)) {
+      const item = new vscode.TreeItem('No handoff yet: click to Compact All');
+      item.iconPath = new vscode.ThemeIcon('add');
+      item.command = { command: 'carrycontext.compactAll', title: 'Compact All' };
+      return item;
+    }
+    const state = loadState(dir);
+    const item = new vscode.TreeItem('Latest handoff');
+    item.description = state.lastUpdated ? ago(state.lastUpdated) : '';
+    item.tooltip = `${state.trigger || ''} · ${state.summarizer || ''}\n${file}`;
+    item.iconPath = new vscode.ThemeIcon('note');
+    item.contextValue = 'latest';
+    item.resourceUri = vscode.Uri.file(file);
+    item.command = { command: 'vscode.open', title: 'Open', arguments: [vscode.Uri.file(file)] };
+    return item;
+  }
+
+  async sessionItems(dir) {
+    const items = [];
+    for (const id of this.config().sources) {
+      const adapter = getProvider(id);
+      if (!adapter?.listSessions) continue;
+      for (const ref of (await adapter.listSessions(dir)).slice(0, SESSIONS_PER_PROVIDER)) {
+        const item = new vscode.TreeItem(ref.title || ref.id.slice(0, 8));
+        item.description = `${adapter.label} · ${ago(ref.updatedAt)}`;
+        item.tooltip = `${ref.path}\nClick to create a handoff from this session`;
+        item.iconPath = new vscode.ThemeIcon('comment');
+        item.contextValue = 'session';
+        item.command = { command: 'carrycontext.compactThisSession', title: 'Create handoff', arguments: [ref] };
+        items.push(item);
+      }
+    }
+    if (!items.length) items.push(note(`No sessions from ${this.config().sources.join(', ')} in this folder yet`));
+    return items;
+  }
+
+  handoffItems(dir) {
+    const folder = paths(dir).handoffs;
+    const files = fs.existsSync(folder)
+      ? fs
+          .readdirSync(folder)
+          .filter((f) => f.endsWith('.md'))
+          .map((f) => path.join(folder, f))
+          .sort((a, b) => mtime(b) - mtime(a))
+      : [];
+    if (!files.length) return [note('Saved handoffs will appear here')];
+    return files.map((file) => {
+      const [session, description] = path.basename(file, '.md').split('--');
+      const item = new vscode.TreeItem(description ? description.replace(/-/g, ' ') : session);
+      item.description = `${session} · ${ago(mtime(file))}`;
+      item.tooltip = file;
+      item.iconPath = new vscode.ThemeIcon('markdown');
+      item.contextValue = 'handoffFile';
+      item.resourceUri = vscode.Uri.file(file);
+      item.command = { command: 'vscode.open', title: 'Open', arguments: [vscode.Uri.file(file)] };
+      return item;
+    });
+  }
+}
+
+function group(label, kind, icon) {
+  const item = Object.assign(new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.Expanded), { kind });
+  item.iconPath = new vscode.ThemeIcon(icon);
+  return item;
+}
+
+function note(label) {
+  const item = new vscode.TreeItem(label);
+  item.iconPath = new vscode.ThemeIcon('info');
+  return item;
+}
+
+module.exports = { HandoffTree };

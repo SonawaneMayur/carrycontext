@@ -1,0 +1,288 @@
+{
+  "name": "carrycontext",
+  "displayName": "CarryContext",
+  "description": "Compact AI coding sessions into a portable handoff.md and resume in any LLM provider (Claude Code, Codex, Gemini, Copilot, Cursor, ...).",
+  "version": "0.1.0",
+  "publisher": "carrycontext",
+  "author": {
+    "name": "Mayur Sonawane",
+    "url": "https://github.com/SonawaneMayur"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SonawaneMayur/carrycontext.git"
+  },
+  "homepage": "https://github.com/SonawaneMayur/carrycontext#readme",
+  "bugs": {
+    "url": "https://github.com/SonawaneMayur/carrycontext/issues"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "main": "./src/extension.js",
+  "bin": {
+    "carrycontext": "./bin/carrycontext.js"
+  },
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "carrycontext.compactAll",
+        "title": "Compact All: Create Handoff From All Sessions",
+        "category": "CarryContext",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "carrycontext.compactSession",
+        "title": "Create Handoff From a Specific Session…",
+        "category": "CarryContext"
+      },
+      {
+        "command": "carrycontext.switchProvider",
+        "title": "Switch To Provider…",
+        "category": "CarryContext",
+        "icon": "$(arrow-swap)"
+      },
+      {
+        "command": "carrycontext.openHandoff",
+        "title": "Open Handoff…",
+        "category": "CarryContext"
+      },
+      {
+        "command": "carrycontext.copyResumePrompt",
+        "title": "Copy Resume Prompt",
+        "category": "CarryContext"
+      },
+      {
+        "command": "carrycontext.installClaudeHooks",
+        "title": "Install Claude Code Hooks (auto-handoff on compact / session end)",
+        "category": "CarryContext"
+      },
+      {
+        "command": "carrycontext.selectSummarizer",
+        "title": "Select Summarizer LLM…",
+        "category": "CarryContext",
+        "icon": "$(sparkle)"
+      },
+      {
+        "command": "carrycontext.setApiKey",
+        "title": "Set API Key…",
+        "category": "CarryContext"
+      },
+      {
+        "command": "carrycontext.menu",
+        "title": "Show Actions…",
+        "category": "CarryContext"
+      },
+      {
+        "command": "carrycontext.refreshView",
+        "title": "Refresh",
+        "category": "CarryContext",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "carrycontext.compactThisSession",
+        "title": "Create Handoff From This Session",
+        "category": "CarryContext",
+        "icon": "$(sync)"
+      },
+      {
+        "command": "carrycontext.restoreHandoff",
+        "title": "Use as Latest Handoff",
+        "category": "CarryContext",
+        "icon": "$(history)"
+      },
+      {
+        "command": "carrycontext.copyHandoff",
+        "title": "Copy Handoff Text",
+        "category": "CarryContext",
+        "icon": "$(copy)"
+      }
+    ],
+    "configuration": {
+      "title": "CarryContext",
+      "properties": {
+        "carrycontext.summarizer.provider": {
+          "type": "string",
+          "default": "none",
+          "enum": [
+            "none",
+            "anthropic",
+            "openai",
+            "gemini",
+            "ollama",
+            "openai-compatible"
+          ],
+          "enumDescriptions": [
+            "No LLM: extract a handoff from the transcript directly (free, offline)",
+            "Anthropic Claude API",
+            "OpenAI API",
+            "Google Gemini API",
+            "Local Ollama server",
+            "Any OpenAI-compatible endpoint (OpenRouter, Groq, Mistral, DeepSeek, LM Studio, ...)"
+          ],
+          "description": "Which LLM writes the handoff summary."
+        },
+        "carrycontext.summarizer.model": {
+          "type": "string",
+          "default": "",
+          "description": "Model id for the summarizer. Leave empty for the provider default."
+        },
+        "carrycontext.summarizer.baseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Override the API base URL (required for openai-compatible)."
+        },
+        "carrycontext.sources": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "claude",
+            "codex",
+            "gemini"
+          ],
+          "description": "Providers whose session transcripts are read when compacting."
+        },
+        "carrycontext.targets": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "claude",
+            "codex",
+            "gemini"
+          ],
+          "description": "Providers that get a copy of handoff.md (in .claude/, .codex/, .gemini/, .github/, .cursor/)."
+        },
+        "carrycontext.lookbackHours": {
+          "type": "number",
+          "default": 24,
+          "description": "Compact All only includes sessions active within this many hours."
+        },
+        "carrycontext.autoUpdate.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Refresh the handoff automatically when a session goes idle (for providers without hooks)."
+        },
+        "carrycontext.autoUpdate.idleSeconds": {
+          "type": "number",
+          "default": 120,
+          "description": "How long a session must be idle before it is auto-compacted."
+        },
+        "carrycontext.handoffLimit": {
+          "type": "number",
+          "default": 50,
+          "description": "How many named handoff files to keep in .carrycontext/handoffs (oldest are deleted first)."
+        },
+        "carrycontext.maxTranscriptChars": {
+          "type": "number",
+          "default": 150000,
+          "description": "Transcript characters sent to the summarizer LLM (head and tail are kept)."
+        }
+      }
+    },
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "carrycontext",
+          "title": "CarryContext",
+          "icon": "media/carrycontext.svg"
+        }
+      ]
+    },
+    "views": {
+      "carrycontext": [
+        {
+          "id": "carrycontext.handoffs",
+          "name": "Handoffs"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "carrycontext.handoffs",
+        "contents": "Open a folder to start carrying context between AI sessions.\n[Open Folder](command:vscode.openFolder)"
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "carrycontext.compactAll",
+          "when": "view == carrycontext.handoffs",
+          "group": "navigation@1"
+        },
+        {
+          "command": "carrycontext.switchProvider",
+          "when": "view == carrycontext.handoffs",
+          "group": "navigation@2"
+        },
+        {
+          "command": "carrycontext.refreshView",
+          "when": "view == carrycontext.handoffs",
+          "group": "navigation@3"
+        },
+        {
+          "command": "carrycontext.selectSummarizer",
+          "when": "view == carrycontext.handoffs",
+          "group": "settings@1"
+        },
+        {
+          "command": "carrycontext.setApiKey",
+          "when": "view == carrycontext.handoffs",
+          "group": "settings@2"
+        },
+        {
+          "command": "carrycontext.installClaudeHooks",
+          "when": "view == carrycontext.handoffs",
+          "group": "settings@3"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "carrycontext.compactThisSession",
+          "when": "view == carrycontext.handoffs && viewItem == session",
+          "group": "inline"
+        },
+        {
+          "command": "carrycontext.restoreHandoff",
+          "when": "view == carrycontext.handoffs && viewItem == handoffFile",
+          "group": "inline@1"
+        },
+        {
+          "command": "carrycontext.copyHandoff",
+          "when": "view == carrycontext.handoffs && viewItem =~ /^(handoffFile|latest)$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "carrycontext.switchProvider",
+          "when": "view == carrycontext.handoffs && viewItem == latest",
+          "group": "inline@1"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "carrycontext.compactThisSession",
+          "when": "false"
+        },
+        {
+          "command": "carrycontext.restoreHandoff",
+          "when": "false"
+        },
+        {
+          "command": "carrycontext.refreshView",
+          "when": "false"
+        }
+      ]
+    }
+  }
+}
