@@ -1,3 +1,5 @@
+<img src="media/icon.png" alt="CarryContext icon" width="96" align="right">
+
 # CarryContext
 
 By **[Mayur Sonawane](https://github.com/SonawaneMayur)** · [GitHub repo](https://github.com/SonawaneMayur/carrycontext) · MIT License
