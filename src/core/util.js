@@ -1,5 +1,6 @@
 // @ts-check
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 
 function ensureDir(dir) {
@@ -104,6 +105,36 @@ function upsertManagedBlock(file, content) {
   if (next !== existing) writeFile(file, next);
 }
 
+/**
+ * Strip personal absolute paths from text that may be shared or recorded:
+ * the project root becomes "." and the home folder "~". Also covers the
+ * dash-encoded form Claude Code uses for its project folders.
+ */
+function shortenPaths(text, cwd) {
+  const home = os.homedir();
+  const enc = (p) => p.replace(/[^a-zA-Z0-9]/g, '-');
+  return [
+    [cwd + path.sep, './'],
+    [cwd, '.'],
+    [home + path.sep, '~/'],
+    [home, '~'],
+    [enc(home), '-~'],
+  ].reduce((t, [from, to]) => (from && from.length > 1 ? t.split(from).join(to) : t), text)
+    .replace(USERNAME_RE || /$^/, '<user>');
+}
+
+// The bare username, as a whole word; skipped for short names that could be ordinary words.
+const USERNAME = (() => {
+  try {
+    return os.userInfo().username;
+  } catch {
+    return '';
+  }
+})();
+const USERNAME_RE = USERNAME.length >= 6 ? new RegExp(`\\b${USERNAME.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'g') : null;
+
+const tildify = (p) => shortenPaths(p, '\0');
+
 function rel(cwd, file) {
   return path.relative(cwd, file).split(path.sep).join('/');
 }
@@ -129,5 +160,7 @@ module.exports = {
   listFiles,
   truncate,
   upsertManagedBlock,
+  shortenPaths,
+  tildify,
   rel,
 };

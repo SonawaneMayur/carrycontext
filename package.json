@@ -189,6 +189,11 @@
           "default": 50,
           "description": "How many named handoff files to keep in .carrycontext/handoffs (oldest are deleted first)."
         },
+        "carrycontext.plainTerminalPrompt": {
+          "type": "boolean",
+          "default": false,
+          "description": "Use a plain \"$ \" prompt in terminals CarryContext opens (hides user@host, e.g. for screen recordings)."
+        },
         "carrycontext.maxTranscriptChars": {
           "type": "number",
           "default": 150000,

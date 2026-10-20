@@ -4,7 +4,7 @@
 const path = require('path');
 const fs = require('fs');
 const { dataDir } = require('./config');
-const { writeFile, readText, readJson, listFiles, mtime, upsertManagedBlock, rel } = require('./util');
+const { writeFile, readText, readJson, listFiles, mtime, upsertManagedBlock, rel, shortenPaths } = require('./util');
 const { SECTIONS, parseSections, heuristicSections, llmSections, shortText } = require('./summarize');
 const { getProvider } = require('../providers');
 const { getLlm } = require('../llm');
@@ -83,7 +83,8 @@ async function updateHandoff({ cwd, sessions, trigger, config, getApiKey }) {
   const description = shortText(sections['Short description'] || sections.Goal || '', 8) || 'handoff';
   delete sections['Short description'];
 
-  const doc = renderDoc({ cwd, sections, sources, trigger, summarizer, warning, session, description });
+  // Never write the user's absolute paths (and so their username) into a handoff.
+  const doc = shortenPaths(renderDoc({ cwd, sections, sources, trigger, summarizer, warning, session, description }), cwd);
   const sessionFile = saveHandoff(cwd, doc, config, handoffFileName(sessions, session, description));
 
   const state = loadState(cwd);
@@ -125,7 +126,7 @@ function renderDoc({ cwd, sections, sources, trigger, summarizer, warning, sessi
 
 > **To the assistant reading this:** this is a handoff from an earlier AI session (${providers}).
 > Read it fully, check the current state of the files before you edit them, then continue from **Next steps**.
-> Ask the user only if something here is unclear or out of date.
+> Ask the user only if something here is unclear or out of date. Paths are relative to the project root.
 
 - **Session:** ${session}
 - **Description:** ${description}

@@ -5,7 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { paths, loadState } = require('./core/handoff');
 const { getProvider } = require('./providers');
-const { ago, mtime } = require('./core/util');
+const { ago, mtime, tildify } = require('./core/util');
 
 const SESSIONS_PER_PROVIDER = 5;
 
@@ -48,7 +48,7 @@ class HandoffTree {
     const state = loadState(dir);
     const item = new vscode.TreeItem('Latest handoff');
     item.description = state.lastUpdated ? ago(state.lastUpdated) : '';
-    item.tooltip = `${state.trigger || ''} · ${state.summarizer || ''}\n${file}`;
+    item.tooltip = `${state.trigger || ''} · ${state.summarizer || ''}\n${tildify(file)}`;
     item.iconPath = new vscode.ThemeIcon('note');
     item.contextValue = 'latest';
     item.resourceUri = vscode.Uri.file(file);
@@ -64,7 +64,7 @@ class HandoffTree {
       for (const ref of (await adapter.listSessions(dir)).slice(0, SESSIONS_PER_PROVIDER)) {
         const item = new vscode.TreeItem(ref.title || ref.id.slice(0, 8));
         item.description = `${adapter.label} · ${ago(ref.updatedAt)}`;
-        item.tooltip = `${ref.path}\nClick to create a handoff from this session`;
+        item.tooltip = `${tildify(ref.path)}\nClick to create a handoff from this session`;
         item.iconPath = new vscode.ThemeIcon('comment');
         item.contextValue = 'session';
         item.command = { command: 'carrycontext.compactThisSession', title: 'Create handoff', arguments: [ref] };
@@ -89,7 +89,7 @@ class HandoffTree {
       const [session, description] = path.basename(file, '.md').split('--');
       const item = new vscode.TreeItem(description ? description.replace(/-/g, ' ') : session);
       item.description = `${session} · ${ago(mtime(file))}`;
-      item.tooltip = file;
+      item.tooltip = tildify(file);
       item.iconPath = new vscode.ThemeIcon('markdown');
       item.contextValue = 'handoffFile';
       item.resourceUri = vscode.Uri.file(file);

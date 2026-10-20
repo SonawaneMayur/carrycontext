@@ -354,6 +354,10 @@ async function launch(cwd, providerId) {
   if (provider.launch?.terminal) {
     const term = vscode.window.createTerminal({ name: `${provider.label} (CarryContext)`, cwd });
     term.show();
+    // Hides user@host from the prompt, e.g. for screen recordings.
+    if (vscode.workspace.getConfiguration('carrycontext').get('plainTerminalPrompt', false) && process.platform !== 'win32') {
+      term.sendText(`PROMPT='$ '; PS1='$ '; clear`);
+    }
     term.sendText(provider.launch.terminal(prompt, shellQuote));
   } else if (provider.launch?.vscodeCommand) {
     try {
