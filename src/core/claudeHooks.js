@@ -45,7 +45,17 @@ run_cli() {
 
 case "$1" in
   session-start)
-    [ -f "$DIR/.claude/handoff.md" ] && cat "$DIR/.claude/handoff.md"
+    # Switch to the checked-out branch's handoff first. Without a Node runtime, read the
+    # branch's file directly (same folder naming as branchSlug() in src/core/git.js).
+    if run_cli activate >/dev/null 2>&1; then
+      FILE="$DIR/.claude/handoff.md"
+    else
+      B=$(sed -n 's#^ref: refs/heads/##p' "$DIR/.git/HEAD" 2>/dev/null)
+      SLUG=$(printf %s "$B" | sed 's#/#__#g; s#[^A-Za-z0-9._-]#-#g')
+      FILE="$CC/branches/$SLUG/handoff.md"
+      { [ -n "$B" ] && [ -f "$FILE" ]; } || FILE="$DIR/.claude/handoff.md"
+    fi
+    [ -f "$FILE" ] && cat "$FILE"
     exit 0 ;;
   sync)
     run_cli sync || { mkdir -p "$CC/inbox"; echo '{"command":"sync"}' > "$CC/inbox/sync-$(date +%s).json"; }

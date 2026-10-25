@@ -60,7 +60,9 @@ module.exports = {
   async readSession(ref) {
     /** @type {import('./types').Message[]} */
     const out = [];
+    let branch;
     for (const line of readJsonl(ref.path)) {
+      if (line.type === 'session_meta') branch = line.payload?.git?.branch || branch;
       const item = line.type === 'response_item' ? line.payload : line;
       if (!item) continue;
       const ts = line.timestamp;
@@ -68,7 +70,7 @@ module.exports = {
         const text = contentText(item.content);
         // Codex injects <environment_context>/<user_instructions> as user messages.
         if (!text || /^\s*<(environment_context|user_instructions)/.test(text)) continue;
-        out.push({ role: item.role, text, ts, provider: 'codex', tools: [] });
+        out.push({ role: item.role, text, ts, provider: 'codex', tools: [], branch });
       } else if (item.type === 'function_call' || item.type === 'local_shell_call' || item.type === 'custom_tool_call') {
         let input = item.arguments ?? item.action ?? item.input;
         if (typeof input === 'string') {
@@ -81,7 +83,7 @@ module.exports = {
         const last = out[out.length - 1];
         const call = { name: item.name || item.type, input };
         if (last && last.role === 'assistant') (last.tools ||= []).push(call);
-        else out.push({ role: 'assistant', text: '', ts, provider: 'codex', tools: [call] });
+        else out.push({ role: 'assistant', text: '', ts, provider: 'codex', tools: [call], branch });
       }
     }
     return out;

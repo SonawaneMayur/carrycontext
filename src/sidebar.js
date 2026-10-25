@@ -3,7 +3,8 @@
 const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
-const { paths, loadState } = require('./core/handoff');
+const { paths, loadState, listSavedHandoffs } = require('./core/handoff');
+const { currentBranch, branchSlug } = require('./core/git');
 const { getProvider } = require('./providers');
 const { ago, mtime, tildify } = require('./core/util');
 
@@ -33,7 +34,8 @@ class HandoffTree {
     if (!dir) return []; // shows the "open a folder" welcome view
     if (!parent) return [this.latestItem(dir), group('Sessions', 'sessions', 'comment-discussion'), group('Saved handoffs', 'handoffs', 'archive')];
     if (parent.kind === 'sessions') return this.sessionItems(dir);
-    if (parent.kind === 'handoffs') return this.handoffItems(dir);
+    if (parent.kind === 'handoffs') return this.handoffGroups(dir);
+    if (parent.kind === 'branch') return this.handoffItems(dir, parent.branch);
     return [];
   }
 
@@ -46,7 +48,8 @@ class HandoffTree {
       return item;
     }
     const state = loadState(dir);
-    const item = new vscode.TreeItem('Latest handoff');
+    const branch = currentBranch(dir);
+    const item = new vscode.TreeItem(branch ? `Latest handoff · ${branch}` : 'Latest handoff');
     item.description = state.lastUpdated ? ago(state.lastUpdated) : '';
     item.tooltip = `${state.trigger || ''} · ${state.summarizer || ''}\n${tildify(file)}`;
     item.iconPath = new vscode.ThemeIcon('note');
@@ -75,15 +78,31 @@ class HandoffTree {
     return items;
   }
 
-  handoffItems(dir) {
-    const folder = paths(dir).handoffs;
-    const files = fs.existsSync(folder)
-      ? fs
-          .readdirSync(folder)
-          .filter((f) => f.endsWith('.md'))
-          .map((f) => path.join(folder, f))
-          .sort((a, b) => mtime(b) - mtime(a))
-      : [];
+  /** One folder per branch (current branch first); flat list outside git. */
+  handoffGroups(dir) {
+    const saved = listSavedHandoffs(dir);
+    if (!saved.length) return [note('Saved handoffs will appear here')];
+    const branches = [...new Set(saved.map((s) => s.branch))];
+    if (branches.length === 1 && branches[0] === null) return this.handoffItems(dir, null);
+    const current = currentBranch(dir);
+    const currentSlug = current && branchSlug(current);
+    branches.sort((a, b) => Number(b === currentSlug) - Number(a === currentSlug));
+    return branches.map((slug) => {
+      const label = slug ? slug.replace(/__/g, '/') : '(no branch)';
+      const item = Object.assign(
+        new vscode.TreeItem(label, slug === currentSlug ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed),
+        { kind: 'branch', branch: slug },
+      );
+      item.description = slug === currentSlug ? 'current' : '';
+      item.iconPath = new vscode.ThemeIcon('git-branch');
+      return item;
+    });
+  }
+
+  handoffItems(dir, branch) {
+    const files = listSavedHandoffs(dir)
+      .filter((s) => s.branch === branch)
+      .map((s) => s.file);
     if (!files.length) return [note('Saved handoffs will appear here')];
     return files.map((file) => {
       const [session, description] = path.basename(file, '.md').split('--');

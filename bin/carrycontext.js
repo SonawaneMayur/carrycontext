@@ -6,7 +6,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { loadConfig } = require('../src/core/config');
-const { paths, gatherSessions, updateHandoff, syncTargets, resumePrompt } = require('../src/core/handoff');
+const { paths, gatherSessions, updateHandoff, activateBranch, syncTargets, resumePrompt } = require('../src/core/handoff');
 const { processPayload } = require('../src/core/claudeHooks');
 const { readText } = require('../src/core/util');
 const { getLlm } = require('../src/llm');
@@ -60,6 +60,11 @@ async function main() {
       if (res) console.log(`${new Date().toISOString()} updated ${res.sessionFile || res.file}${res.warning ? ' (' + res.warning + ')' : ''}`);
       break;
     }
+    case 'activate': {
+      const res = activateBranch(cwd, config);
+      if (res.branch) console.log(`Active handoff: ${res.branch}${res.inheritedFrom ? ` (new, inherited from ${res.inheritedFrom})` : ''}`);
+      break;
+    }
     case 'sync':
       console.log(syncTargets(cwd, config).map((f) => path.relative(cwd, f)).join('\n') || 'No handoff to sync.');
       break;
@@ -74,6 +79,7 @@ async function main() {
 
   compact-all          build handoff.md from the newest session of each source provider
   sync                 copy .carrycontext/handoff.md to every target provider
+  activate             make the checked-out git branch's handoff the active one
   show                 print the current handoff
   prompt <provider>    print a prompt that tells <provider> to resume from the handoff
   hook claude          used by Claude Code hooks (reads --payload FILE)`);

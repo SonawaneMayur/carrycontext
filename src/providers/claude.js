@@ -66,6 +66,7 @@ module.exports = {
         tools,
         ts: e.timestamp,
         provider: 'claude',
+        branch: e.gitBranch || undefined,
       });
     }
     ref.title = customTitle || aiTitle || ref.title;

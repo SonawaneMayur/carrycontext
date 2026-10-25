@@ -9,6 +9,7 @@
  * @property {{name: string, input: any}[]} [tools]  tool calls made in this turn
  * @property {string} [ts]                            ISO timestamp
  * @property {string} [provider]
+ * @property {string} [branch]                        git branch checked out when the message was sent
  */
 
 /**

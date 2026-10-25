@@ -3,7 +3,8 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const { saveConfig } = require('./core/config');
-const { paths, loadState, gatherSessions, updateHandoff, syncTargets, resumePrompt } = require('./core/handoff');
+const { paths, loadState, gatherSessions, updateHandoff, activateBranch, listSavedHandoffs, syncTargets, resumePrompt } = require('./core/handoff');
+const { currentBranch, headFile } = require('./core/git');
 const { installClaudeHooks, writeHookScript, hooksInstalled, processPayload, pendingPayloads } = require('./core/claudeHooks');
 const { getProvider, listProviders } = require('./providers');
 const { getLlm, listLlms } = require('./llm');
@@ -94,10 +95,15 @@ function activate(context) {
     }
     status.command = 'carrycontext.menu';
     const state = loadState(dir);
-    status.text = state.lastUpdated ? `$(history) Handoff ${ago(state.lastUpdated)}` : '$(history) Handoff';
-    status.tooltip = state.lastUpdated
-      ? `Last handoff: ${state.lastUpdated} (${state.trigger}, ${state.summarizer})\nClick for CarryContext actions`
-      : 'No handoff yet. Click for CarryContext actions.';
+    const branch = currentBranch(dir);
+    status.text = ['$(history) Handoff', branch, state.lastUpdated && ago(state.lastUpdated)].filter(Boolean).join(' · ');
+    status.tooltip = [
+      state.lastUpdated ? `Last handoff: ${state.lastUpdated} (${state.trigger}, ${state.summarizer})` : 'No handoff yet.',
+      branch && `Branch: ${branch} (each branch keeps its own handoff)`,
+      'Click for CarryContext actions',
+    ]
+      .filter(Boolean)
+      .join('\n');
     status.show();
   }
 
@@ -235,16 +241,14 @@ function activate(context) {
       if (!dir) return;
       const p = paths(dir);
       if (!fs.existsSync(p.handoff)) return vscode.window.showInformationMessage('No handoff yet. Run "CarryContext: Compact All".');
-      const named = fs.existsSync(p.handoffs)
-        ? fs
-            .readdirSync(p.handoffs)
-            .filter((f) => f.endsWith('.md'))
-            .map((f) => ({ file: path.join(p.handoffs, f), at: fs.statSync(path.join(p.handoffs, f)).mtimeMs }))
-            .sort((a, b) => b.at - a.at)
-            .map(({ file, at }) => ({ label: path.basename(file, '.md'), description: ago(at), file }))
-        : [];
+      const named = listSavedHandoffs(dir).map(({ file, branch, at }) => ({
+        label: path.basename(file, '.md'),
+        description: [branch && branch.replace(/__/g, '/'), ago(at)].filter(Boolean).join(' · '),
+        file,
+      }));
+      const branch = currentBranch(dir);
       const pick = await vscode.window.showQuickPick(
-        [{ label: 'Latest (handoff.md)', description: 'what providers read', file: p.handoff }, ...named],
+        [{ label: `Latest (handoff.md)${branch ? ` · ${branch}` : ''}`, description: 'what providers read', file: p.handoff }, ...named],
         { placeHolder: 'Open which handoff?' },
       );
       if (pick) await vscode.window.showTextDocument(vscode.Uri.file(pick.file));
@@ -324,7 +328,7 @@ function activate(context) {
         .showInformationMessage('CarryContext: auto-update the handoff when Claude Code compacts or a session ends?', 'Install hooks', 'Not now')
         .then((a) => a === 'Install hooks' && commands['carrycontext.installClaudeHooks']());
     }
-    const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(dir, '.carrycontext/{state.json,handoff.md,handoffs/*.md}'));
+    const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(dir, '.carrycontext/{state.json,handoff.md,handoffs/**/*.md}'));
     watcher.onDidChange(refreshStatus);
     watcher.onDidCreate(refreshStatus);
     watcher.onDidDelete(refreshStatus);
@@ -334,6 +338,26 @@ function activate(context) {
     context.subscriptions.push({ dispose: () => clearInterval(timer) });
     const tick = setInterval(refreshStatus, 60000);
     context.subscriptions.push({ dispose: () => clearInterval(tick) });
+
+    // Each git branch keeps its own handoff: swap the active one when HEAD changes.
+    const onBranchChange = () => {
+      const res = activateBranch(dir, config());
+      refreshStatus();
+      if (!res.changed) return;
+      output.appendLine(`${new Date().toISOString()} branch ${res.branch}: handoff activated${res.inheritedFrom ? ` (new, from ${res.inheritedFrom})` : ''}`);
+      vscode.window.setStatusBarMessage(
+        res.inheritedFrom
+          ? `CarryContext: new handoff for ${res.branch}, started from ${res.inheritedFrom}`
+          : `CarryContext: switched to the ${res.branch} handoff`,
+        5000,
+      );
+    };
+    const head = headFile(dir);
+    if (head) {
+      onBranchChange();
+      fs.watchFile(head, { interval: 2000 }, onBranchChange);
+      context.subscriptions.push({ dispose: () => fs.unwatchFile(head, onBranchChange) });
+    }
   }
   refreshStatus();
 }

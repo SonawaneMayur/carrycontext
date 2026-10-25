@@ -29,8 +29,9 @@ The status bar shows how long ago the handoff was updated. Click it to switch pr
 
 | Location | Read by |
 |---|---|
-| `.carrycontext/handoff.md` | Latest handoff; the provider copies below are made from it |
-| `.carrycontext/handoffs/<provider>-<session-name>--<short-description>.md` | A named copy of every handoff, kept permanently up to `carrycontext.handoffLimit` (default 50) |
+| `.carrycontext/handoff.md` | Handoff for the checked-out branch; the provider copies below are made from it |
+| `.carrycontext/branches/<branch>/handoff.md` | Each git branch's own handoff (see [Branch-aware handoffs](#branch-aware-handoffs)) |
+| `.carrycontext/handoffs/<branch>/<provider>-<session-name>--<short-description>.md` | A named copy of every handoff, kept up to `carrycontext.handoffLimit` (default 50) per branch |
 | `.claude/handoff.md` | Claude Code, injected at session start by the SessionStart hook |
 | `.codex/handoff.md` + block in `AGENTS.md` | Codex CLI |
 | `.gemini/handoff.md` + block in `GEMINI.md` | Gemini CLI |
@@ -50,6 +51,19 @@ Named copy examples:
 - **Overwriting:** another handoff with the same session and description replaces that file; a new description creates a new file. **Open Handoff…** lists every file, newest first.
 
 `carrycontext.targets` decides which of the provider copies are written. Instruction files only get a block between `<!-- carrycontext:start -->` and `<!-- carrycontext:end -->` markers; nothing else in them is changed.
+
+## Branch-aware handoffs
+
+In a git repo, every branch keeps its own handoff, so switching branches never leaves an assistant talking about the other branch's work.
+
+- **Switching:** when you `git checkout` a branch, CarryContext makes that branch's handoff the active one and copies it to every assistant. In VS Code this happens within about 2 seconds; for Claude Code it also happens when a session starts, even with VS Code closed.
+- **New branches:** a branch with no handoff yet starts with a **Background** section carrying over the previous branch's goal, decisions and gotchas. It's kept until the branch's own work replaces it.
+- **Sessions that span a switch:** Claude Code records the branch on every message, so if you switch branches partway through a session, each part goes into the right branch's handoff. Codex sessions use the branch in their metadata; anything else goes to the checked-out branch.
+- **Where you see it:** the status bar shows the branch (`Handoff · feature/payments · 5m ago`), and the sidebar groups saved handoffs by branch with the current one first.
+
+Branch folders replace `/` with `__`, so `feature/payments` is stored as `branches/feature__payments/`. Worktrees and detached HEADs (`detached-<sha>`) are supported. Outside git, everything works as a single handoff, as before.
+
+Not handled yet: merging a branch doesn't merge its handoff into the target branch's.
 
 ## Claude Code integration
 
@@ -84,6 +98,7 @@ LLM summaries update the previous handoff rather than rewriting it from scratch.
 node bin/carrycontext.js compact-all --cwd /path/to/project
 node bin/carrycontext.js sync          # copy .carrycontext/handoff.md to all targets
 node bin/carrycontext.js show
+node bin/carrycontext.js activate     # make the checked-out branch's handoff active
 node bin/carrycontext.js prompt codex  # print a resume prompt for codex
 ```
 
@@ -114,7 +129,8 @@ Leave out `listSessions`/`readSession` for a target-only provider (like Copilot 
 ```
 bin/carrycontext.js        CLI, also the entry point for Claude Code hooks
 src/extension.js           VS Code commands, status bar, idle polling
-src/core/handoff.js        gather sessions → summarize → write and mirror (no vscode import)
+src/core/handoff.js        gather sessions → summarize → write per branch and mirror (no vscode import)
+src/core/git.js            current branch from .git/HEAD (worktrees, detached HEAD)
 src/core/summarize.js      heuristic + LLM summaries, transcript condensing
 src/core/claudeHooks.js    hook script, settings.local.json merge, /compact-all, inbox
 src/providers/*.js         transcript readers and handoff targets per assistant
