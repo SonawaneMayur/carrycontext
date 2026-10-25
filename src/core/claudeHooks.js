@@ -182,7 +182,8 @@ Write a handoff document so this work can continue in a new session, possibly in
    ## Gotchas
    \`\`\`
 
-   Be concrete: file paths, function names, commands, errors, and why each decision was made. Say what is verified, what is half-done and what has not started.
+   Be concrete: file paths, function names, commands, errors, and why each decision was made.
+   **Key decisions** is a running log: keep every existing entry exactly as written and add new ones at the end. If a decision was reversed, add an entry saying so; don't delete the old one. Say what is verified, what is half-done and what has not started.
 3. Save the same content as \`.carrycontext/handoffs/claude-<session-name>--<short-description>.md\`, with both parts lowercase and hyphenated (example: \`claude-vs-code-handoff-utility--add-named-handoff-files.md\`).
 4. Run \`sh .carrycontext/hooks/claude-hook.sh sync\` to copy the handoff to every provider's location.
 5. Reply with a 3-line summary. Tell the user they can now run /compact, /clear, or switch assistants with "CarryContext: Switch To Provider".

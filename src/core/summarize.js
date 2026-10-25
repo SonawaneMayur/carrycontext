@@ -110,7 +110,8 @@ function heuristicSections(messages, prev) {
       ? `Last assistant update (${lastAssistant.provider}${lastAssistant.ts ? ', ' + lastAssistant.ts : ''}):\n\n${quote(truncate(lastAssistant.text.trim(), 2500))}`
       : prev['Current state'] || '_No assistant output yet._',
     'Recent requests': bullets(users.slice(-6), (m) => truncate(m.text.trim().replace(/\s+/g, ' '), 400)),
-    'Key decisions': prev['Key decisions'] || '_Not captured in heuristic mode. Choose a summarizer LLM for richer handoffs._',
+    // Only new candidates; handoff.js merges them into the existing log.
+    'Key decisions': bullets(constraintStatements(users)),
     'Files & code': [
       facts.edited.length ? `**Edited**\n${bullets(facts.edited.slice(-40), (f) => '`' + f + '`')}` : '',
       facts.read.length ? `**Read**\n${bullets(facts.read.slice(-20), (f) => '`' + f + '`')}` : '',
@@ -127,6 +128,52 @@ function heuristicSections(messages, prev) {
       '- Continue from the most recent request above.',
     Gotchas: prev.Gotchas || '',
   };
+}
+
+// Sentences in user messages that state a rule or a choice.
+const CONSTRAINT = /\b(always|never|don'?t|do not|must|must not|should not|shouldn'?t|instead of|let'?s use|we'?ll use|prefer|avoid|keep .+ (?:out|private)|only use)\b/i;
+const MAX_CONSTRAINTS = 5;
+
+/** Rule-like statements from the user ("don't publish my email", "use X instead of Y"). */
+function constraintStatements(userMessages) {
+  const out = [];
+  for (const m of userMessages.slice(-30)) {
+    for (const sentence of m.text.split(/(?<=[.!?])\s+|\n+/)) {
+      const t = sentence.trim().replace(/\s+/g, ' ');
+      if (t.length >= 15 && t.length <= 220 && CONSTRAINT.test(t) && !/^[<`]/.test(t)) out.push(`${t} _(user request)_`);
+    }
+  }
+  return out.slice(-MAX_CONSTRAINTS);
+}
+
+const DECISION_TAG = /\s*_\([^)]*\)_\s*$/;
+const normalize = (entry) => entry.replace(DECISION_TAG, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+
+/** Bullet entries of a decisions section, ignoring italic placeholders like "_Not captured…_". */
+function decisionEntries(text) {
+  if (!text) return [];
+  return text
+    .split('\n')
+    .map((l) => l.replace(/^\s*(?:[-*]|\d+\.)\s+/, '').trim())
+    .filter((l) => l && !/^_.*_$/.test(l) && !/^\*\*[^*]+:\*\*$/.test(l));
+}
+
+/**
+ * Merge decisions into an append-only log: existing entries are kept as written,
+ * new ones are added with a date and branch tag, duplicates (by text) are skipped.
+ */
+function mergeDecisions(existing, incoming, tag) {
+  const log = decisionEntries(existing);
+  const seen = new Set(log.map(normalize));
+  for (const entry of decisionEntries(incoming)) {
+    const key = normalize(entry);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    const base = entry.replace(DECISION_TAG, '');
+    const source = entry.match(DECISION_TAG)?.[0].trim().slice(2, -2);
+    log.push(`${base} _(${[tag, source].filter(Boolean).join(' · ')})_`);
+  }
+  return log.map((e) => `- ${e}`).join('\n');
 }
 
 /** First `words` words of the first line, without markdown. */
@@ -148,6 +195,7 @@ Rules:
 - Record what is done, what is half-done, and what is not started. Never claim something works unless the transcript shows it verified.
 - If a previous handoff is given, UPDATE it: keep what is still true, drop what is obsolete, add what is new.
 - Start with "## Short description" containing one line of at most 8 words naming what is being worked on right now.
+- Under "## Key decisions", list only decisions and constraints NOT already in the previous handoff, one bullet each with the reason. Earlier ones are kept automatically. If an earlier decision was reversed, add a new bullet saying so.
 - Then output only markdown with exactly these level-2 headings, in this order: ${SECTIONS.map((s) => `"## ${s}"`).join(', ')}.
 - No preamble, no closing remarks.`;
 
@@ -180,4 +228,4 @@ async function llmSections(messages, prevDoc, { summarizer, maxTranscriptChars }
   return sections;
 }
 
-module.exports = { SECTIONS, extractFacts, condense, parseSections, heuristicSections, llmSections, shortText };
+module.exports = { SECTIONS, extractFacts, condense, parseSections, heuristicSections, llmSections, shortText, mergeDecisions, constraintStatements };

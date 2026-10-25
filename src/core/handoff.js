@@ -8,7 +8,7 @@ const path = require('path');
 const fs = require('fs');
 const { dataDir } = require('./config');
 const { writeFile, readText, readJson, listFiles, mtime, upsertManagedBlock, rel, shortenPaths } = require('./util');
-const { SECTIONS, parseSections, heuristicSections, llmSections, shortText } = require('./summarize');
+const { SECTIONS, parseSections, heuristicSections, llmSections, shortText, mergeDecisions } = require('./summarize');
 const { currentBranch, branchSlug } = require('./git');
 const { getProvider } = require('../providers');
 const { getLlm } = require('../llm');
@@ -122,6 +122,11 @@ async function writeBranchHandoff({ cwd, branch, messages, sessions, sources, tr
   sections ||= heuristicSections(messages, prev);
   // Context inherited from the parent branch is kept until the branch's own work replaces it.
   if (prev.Background && !sections.Background) sections.Background = prev.Background;
+  // Decisions only accumulate, so repeated compactions can't summarize them away.
+  const tag = [new Date().toISOString().slice(0, 10), branch].filter(Boolean).join(' · ');
+  sections['Key decisions'] =
+    mergeDecisions(prev['Key decisions'], sections['Key decisions'], tag) ||
+    '_None recorded yet. Decisions come from an LLM summary, /compact-all, or rule-like statements in your messages ("always…", "don\'t…")._';
 
   const session = sessionName(sessions, messages);
   const description = shortText(sections['Short description'] || sections.Goal || '', 8) || 'handoff';

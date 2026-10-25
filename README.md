@@ -65,6 +65,19 @@ Branch folders replace `/` with `__`, so `feature/payments` is stored as `branch
 
 Not handled yet: merging a branch doesn't merge its handoff into the target branch's.
 
+## Decision log
+
+The **Key decisions** section only grows. Each handoff adds new decisions to the end, tagged with the date and branch, and never re-summarizes or drops earlier ones, so they survive any number of compactions.
+
+- **With an LLM summarizer,** the LLM is asked for new decisions only; repeats are skipped by comparing text.
+- **Without one,** CarryContext picks up rule-like statements from your messages, such as "don't publish my email" or "use pnpm instead of npm", tagged `user request`.
+- **Reversals** are recorded as new entries ("Reverted: use Postgres instead of SQLite"), so the history stays readable.
+
+```
+- Use pnpm instead of npm. _(2026-10-25 · main · user request)_
+- Store handoffs per branch, so contexts never mix _(2026-10-25 · main)_
+```
+
 ## Claude Code integration
 
 **Install Claude Code Hooks** adds three hooks to `.claude/settings.local.json`:
