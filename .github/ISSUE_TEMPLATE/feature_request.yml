@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest an improvement or a new assistant to support
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem would this solve?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like CarryContext to do?
+    validations:
+      required: true
+  - type: textarea
+    id: format
+    attributes:
+      label: New assistant? Where does it store its sessions, and what file does it read on startup?

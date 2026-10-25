@@ -4,6 +4,11 @@
 
 By **[Mayur Sonawane](https://github.com/SonawaneMayur)** · [GitHub repo](https://github.com/SonawaneMayur/carrycontext) · MIT License
 
+[![CI](https://github.com/SonawaneMayur/carrycontext/actions/workflows/ci.yml/badge.svg)](https://github.com/SonawaneMayur/carrycontext/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/SonawaneMayur/carrycontext/actions/workflows/codeql.yml/badge.svg)](https://github.com/SonawaneMayur/carrycontext/actions/workflows/codeql.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
+![Dependencies: none](https://img.shields.io/badge/dependencies-none-brightgreen)
+
 Compact your AI coding sessions into one portable `handoff.md`, then pick up the work in a new session or in another provider's assistant (Claude Code, Codex, Gemini CLI, Copilot, Cursor, or any chat via the clipboard).
 
 ## Run it
@@ -149,6 +154,27 @@ Leave out `listSessions`/`readSession` for a target-only provider (like Copilot 
 
 **New summarizer LLM.** Call `registerLlm(id, { label, defaultModel, envKey, needsKey, complete })` in [src/llm/index.js](src/llm/index.js).
 
+## Security and privacy
+
+- **Secrets are redacted** before anything is written or sent to a summarizer: API keys (Anthropic, OpenAI, GitHub, AWS, Google, Slack, Stripe), private keys, JWTs, passwords and URL credentials become `[REDACTED:<kind>]`. Add your own formats with `carrycontext.redact.extraPatterns`.
+- **No personal paths:** handoffs use `./` and `~` instead of absolute paths, and `<user>` instead of your username.
+- **Local by default:** nothing leaves your machine unless you pick an LLM summarizer, and then only the redacted transcript goes to that provider.
+- **API keys** live in VS Code's secret storage (or your environment for the CLI), never in project files.
+
+Details, and how to report a vulnerability privately: [SECURITY.md](SECURITY.md).
+
+## Development
+
+No dependencies; Node 22+ and git are all you need.
+
+```sh
+npm test               # 90 tests in under a second
+npm run test:coverage  # with the coverage minimums CI enforces
+npm run check          # syntax and manifest checks
+```
+
+The tests run in a sandbox with a temporary `HOME`, so they never touch your real assistant data. Providers, LLM clients and secret patterns have **contract tests**: register a new one and the shared tests check it automatically. See [CONTRIBUTING.md](CONTRIBUTING.md) for how to extend CarryContext, and [CHANGELOG.md](CHANGELOG.md) for what changed.
+
 ## Layout
 
 ```
@@ -160,11 +186,16 @@ src/core/summarize.js      heuristic + LLM summaries, transcript condensing
 src/core/claudeHooks.js    hook script, settings.local.json merge, /compact-all, inbox
 src/providers/*.js         transcript readers and handoff targets per assistant
 src/llm/index.js           Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible clients
+src/core/sanitize.js       cleaning pipeline for everything written or sent (secrets, paths)
+src/security/secrets.js    secret patterns (registry)
+test/                      node:test suites; test/helpers/ has the sandbox, session writers, mock LLM
+.github/                   CI, CodeQL, Dependabot, issue and PR templates
 ```
 
 ## Caveats
 
-- Codex and Gemini transcript formats aren't documented and change between versions. Their readers are best-effort and were tested only against sample files. Claude Code's reader was tested against real transcripts.
+- Codex and Gemini transcript formats aren't documented and change between versions. Their readers are best-effort and tested against synthetic sessions in their known formats. Claude Code's reader was also tested against real transcripts.
+- The VS Code UI (`src/extension.js`, `src/sidebar.js`) isn't covered by automated tests yet; everything it calls is.
 - `.carrycontext/.gitignore` excludes `handoff.md`, `handoffs/`, the inbox, state and logs. The provider copies (`.claude/handoff.md`, `.codex/handoff.md`, ...) are outside that folder and not ignored. Handoffs can contain anything from your conversations, so check them before committing.
 
 ## Author

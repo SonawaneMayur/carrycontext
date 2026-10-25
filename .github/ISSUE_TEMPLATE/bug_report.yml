@@ -1,0 +1,42 @@
+name: Bug report
+description: Something doesn't work as described
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please **don't paste handoffs or transcripts that contain secrets or private code**.
+        For security problems, use the private report described in SECURITY.md instead.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Run "CarryContext: Compact All"
+        2. ...
+    validations:
+      required: true
+  - type: dropdown
+    id: assistant
+    attributes:
+      label: Which assistant's session?
+      multiple: true
+      options: [Claude Code, Codex CLI, Gemini CLI, Copilot, Cursor, Other]
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      placeholder: CarryContext 0.1.0, VS Code 1.95, macOS 15
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: Output from View → Output → CarryContext (remove anything private)
+      render: text

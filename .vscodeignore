@@ -1,3 +1,7 @@
 .vscode/**
 .carrycontext/**
 test/**
+.github/**
+.editorconfig
+CONTRIBUTING.md
+CHANGELOG.md
