@@ -78,6 +78,18 @@ The **Key decisions** section only grows. Each handoff adds new decisions to the
 - Store handoffs per branch, so contexts never mix _(2026-10-25 · main)_
 ```
 
+## Repository state from git
+
+Every handoff includes a **Repository state** section read from git, not from the conversation, so the next assistant gets facts it can check:
+
+- the branch, and how many commits it is ahead of `main` (or origin's default branch)
+- the last commit
+- uncommitted changes, without CarryContext's own files
+- this branch's commits
+- **Check these:** files the session reports editing that git shows no change for, which is a sign the summary may be wrong
+
+The LLM summarizer gets the same facts and is told to trust git where it disagrees with the transcript. Git is only run when it's actually installed: on a Mac without the developer tools the section is skipped instead of triggering an install popup. A branch you aren't on keeps the snapshot from its last handoff.
+
 ## Claude Code integration
 
 **Install Claude Code Hooks** adds three hooks to `.claude/settings.local.json`:
@@ -143,7 +155,7 @@ Leave out `listSessions`/`readSession` for a target-only provider (like Copilot 
 bin/carrycontext.js        CLI, also the entry point for Claude Code hooks
 src/extension.js           VS Code commands, status bar, idle polling
 src/core/handoff.js        gather sessions → summarize → write per branch and mirror (no vscode import)
-src/core/git.js            current branch from .git/HEAD (worktrees, detached HEAD)
+src/core/git.js            current branch from .git/HEAD; Repository state section from git
 src/core/summarize.js      heuristic + LLM summaries, transcript condensing
 src/core/claudeHooks.js    hook script, settings.local.json merge, /compact-all, inbox
 src/providers/*.js         transcript readers and handoff targets per assistant

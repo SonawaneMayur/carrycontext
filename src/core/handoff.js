@@ -8,12 +8,12 @@ const path = require('path');
 const fs = require('fs');
 const { dataDir } = require('./config');
 const { writeFile, readText, readJson, listFiles, mtime, upsertManagedBlock, rel, shortenPaths } = require('./util');
-const { SECTIONS, parseSections, heuristicSections, llmSections, shortText, mergeDecisions } = require('./summarize');
-const { currentBranch, branchSlug } = require('./git');
-const { getProvider } = require('../providers');
+const { SECTIONS, parseSections, heuristicSections, llmSections, shortText, mergeDecisions, extractFacts } = require('./summarize');
+const { currentBranch, branchSlug, repoState } = require('./git');
+const { getProvider, listProviders } = require('../providers');
 const { getLlm } = require('../llm');
 
-const RENDER_ORDER = ['Goal', 'Background', 'Current state', 'Recent requests', 'Key decisions', 'Files & code', 'Commands run', 'Open tasks', 'Next steps', 'Gotchas'];
+const RENDER_ORDER = ['Goal', 'Background', 'Current state', 'Recent requests', 'Key decisions', 'Files & code', 'Repository state', 'Commands run', 'Open tasks', 'Next steps', 'Gotchas'];
 
 function paths(cwd) {
   const dir = dataDir(cwd);
@@ -90,7 +90,7 @@ async function updateHandoff({ cwd, sessions, trigger, config, getApiKey }) {
 
   let result;
   for (const [branch, msgs] of groups) {
-    const r = await writeBranchHandoff({ cwd, branch, messages: msgs, sessions, sources, trigger, config, getApiKey });
+    const r = await writeBranchHandoff({ cwd, branch, current, messages: msgs, sessions, sources, trigger, config, getApiKey });
     if (branch === current || !result) result = r;
   }
   activateBranch(cwd, config, current);
@@ -102,10 +102,12 @@ async function updateHandoff({ cwd, sessions, trigger, config, getApiKey }) {
   return { ...result, file: paths(cwd).handoff, branches: [...groups.keys()].filter(Boolean) };
 }
 
-async function writeBranchHandoff({ cwd, branch, messages, sessions, sources, trigger, config, getApiKey }) {
+async function writeBranchHandoff({ cwd, branch, current, messages, sessions, sources, trigger, config, getApiKey }) {
   const bp = branchPaths(cwd, branch);
   const prevDoc = readText(bp.handoff);
   const prev = parseSections(prevDoc);
+  // git only describes the checked-out branch; other branches keep their last snapshot.
+  const repo = branch === current ? repoState(cwd, extractFacts(messages).edited, ownFiles(cwd)) : '';
 
   let sections;
   let summarizer = 'heuristic';
@@ -113,13 +115,14 @@ async function writeBranchHandoff({ cwd, branch, messages, sessions, sources, tr
   if (config.summarizer.provider !== 'none') {
     try {
       const apiKey = await getApiKey(config.summarizer.provider);
-      sections = await llmSections(messages, prevDoc, config, apiKey);
+      sections = await llmSections(messages, prevDoc, config, apiKey, repo);
       summarizer = `${config.summarizer.provider}:${config.summarizer.model || getLlm(config.summarizer.provider)?.defaultModel}`;
     } catch (e) {
       warning = `Summarizer failed, used heuristic instead: ${e.message}`;
     }
   }
   sections ||= heuristicSections(messages, prev);
+  sections['Repository state'] = repo || prev['Repository state'] || '';
   // Context inherited from the parent branch is kept until the branch's own work replaces it.
   if (prev.Background && !sections.Background) sections.Background = prev.Background;
   // Decisions only accumulate, so repeated compactions can't summarize them away.
@@ -197,6 +200,22 @@ function inheritedDoc(cwd, branch, parent, parentDoc) {
     session: branch,
     description: `new branch from ${parent}`,
   });
+}
+
+/**
+ * Files CarryContext writes in the project: provider handoff copies, instruction files that
+ * contain nothing but our block, and the /compact-all command.
+ */
+function ownFiles(cwd) {
+  const files = [path.join(cwd, '.claude', 'commands', 'compact-all.md')];
+  for (const p of listProviders()) {
+    if (!p.target) continue;
+    files.push(p.target.handoffFile(cwd));
+    const instructions = p.target.instructionsFile?.(cwd);
+    const text = instructions && readText(instructions);
+    if (text && /^<!-- carrycontext:start -->[\s\S]*<!-- carrycontext:end -->$/.test(text.trim())) files.push(instructions);
+  }
+  return files;
 }
 
 /** Claude's session title, else the first prompt; "compact-all" when sessions are merged. */

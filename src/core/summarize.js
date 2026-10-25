@@ -203,7 +203,7 @@ Rules:
  * LLM-written handoff sections.
  * @returns {Promise<Record<string, string>>}
  */
-async function llmSections(messages, prevDoc, { summarizer, maxTranscriptChars }, apiKey) {
+async function llmSections(messages, prevDoc, { summarizer, maxTranscriptChars }, apiKey, repoState = '') {
   const client = getLlm(summarizer.provider);
   if (!client) throw new Error(`Unknown summarizer provider "${summarizer.provider}"`);
   if (client.needsKey && !apiKey) throw new Error(`No API key for ${summarizer.provider} (set it via "CarryContext: Set API Key" or ${client.envKey})`);
@@ -211,6 +211,7 @@ async function llmSections(messages, prevDoc, { summarizer, maxTranscriptChars }
   const prompt = [
     prevDoc ? `<previous_handoff>\n${prevDoc}\n</previous_handoff>` : '',
     `<extracted_facts>\nEdited files: ${facts.edited.join(', ') || 'none'}\nCommands: ${facts.commands.slice(-20).join(' ; ') || 'none'}\nTodos: ${JSON.stringify(facts.todos || [])}\n</extracted_facts>`,
+    repoState ? `<git_state>\nGround truth from git right now. Prefer it over the transcript where they disagree.\n${repoState}\n</git_state>` : '',
     `<transcript>\n${condense(messages, maxTranscriptChars)}\n</transcript>`,
     'Write the handoff now.',
   ]
