@@ -6,8 +6,10 @@
 // .carrycontext/handoff.md and the provider copies always hold the checked-out branch's one.
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const { dataDir } = require('./config');
-const { writeFile, readText, readJson, listFiles, mtime, upsertManagedBlock, rel, shortenPaths } = require('./util');
+const { writeFile, readText, readJson, listFiles, mtime, upsertManagedBlock, rel } = require('./util');
+const { sanitize } = require('./sanitize');
 const { SECTIONS, parseSections, heuristicSections, llmSections, shortText, mergeDecisions, extractFacts } = require('./summarize');
 const { currentBranch, branchSlug, repoState } = require('./git');
 const { getProvider, listProviders } = require('../providers');
@@ -36,6 +38,11 @@ function branchPaths(cwd, branch) {
 }
 
 const loadState = (cwd) => readJson(paths(cwd).state, { processed: {} });
+
+// state.json records which sessions were summarized. Keys are hashes of the transcript path,
+// so the file never contains the user's home folder or username.
+const sessionKey = (file) => crypto.createHash('sha256').update(file).digest('hex').slice(0, 16);
+const lastProcessed = (state, file) => state.processed?.[sessionKey(file)] || 0;
 const saveState = (cwd, state) => writeFile(paths(cwd).state, JSON.stringify(state, null, 2) + '\n');
 
 /**
@@ -96,7 +103,9 @@ async function updateHandoff({ cwd, sessions, trigger, config, getApiKey }) {
   activateBranch(cwd, config, current);
 
   const state = loadState(cwd);
-  for (const { ref } of sessions) state.processed[ref.path] = mtime(ref.path);
+  state.processed ||= {};
+  for (const key of Object.keys(state.processed)) if (key.includes('/') || key.includes('\\')) delete state.processed[key]; // pre-0.2 entries
+  for (const { ref } of sessions) state.processed[sessionKey(ref.path)] = mtime(ref.path);
   Object.assign(state, { lastUpdated: new Date().toISOString(), trigger, sources, summarizer: result.summarizer });
   saveState(cwd, state);
   return { ...result, file: paths(cwd).handoff, branches: [...groups.keys()].filter(Boolean) };
@@ -115,7 +124,7 @@ async function writeBranchHandoff({ cwd, branch, current, messages, sessions, so
   if (config.summarizer.provider !== 'none') {
     try {
       const apiKey = await getApiKey(config.summarizer.provider);
-      sections = await llmSections(messages, prevDoc, config, apiKey, repo);
+      sections = await llmSections(messages, prevDoc, config, apiKey, repo, cwd);
       summarizer = `${config.summarizer.provider}:${config.summarizer.model || getLlm(config.summarizer.provider)?.defaultModel}`;
     } catch (e) {
       warning = `Summarizer failed, used heuristic instead: ${e.message}`;
@@ -135,8 +144,7 @@ async function writeBranchHandoff({ cwd, branch, current, messages, sessions, so
   const description = shortText(sections['Short description'] || sections.Goal || '', 8) || 'handoff';
   delete sections['Short description'];
 
-  // Never write the user's absolute paths (and so their username) into a handoff.
-  const doc = shortenPaths(renderDoc({ cwd, branch, sections, sources, trigger, summarizer, warning, session, description }), cwd);
+  const doc = cleanDoc(renderDoc({ cwd, branch, sections, sources, trigger, summarizer, warning, session, description }), cwd, config);
   const sessionFile = saveHandoff(cwd, doc, config, branch, handoffFileName(sessions, session, description));
   return { doc, sessionFile, warning, summarizer, branch };
 }
@@ -157,7 +165,7 @@ function activateBranch(cwd, config, branch = currentBranch(cwd)) {
   if (!fs.existsSync(bp.handoff)) {
     const activeDoc = readText(p.handoff);
     if (activeDoc && previous && previous !== branch) {
-      writeFile(bp.handoff, inheritedDoc(cwd, branch, previous, activeDoc));
+      writeFile(bp.handoff, cleanDoc(inheritedDoc(cwd, branch, previous, activeDoc), cwd, config));
       inheritedFrom = previous;
     } else if (activeDoc) {
       // First run with branch support: the existing handoff belongs to this branch.
@@ -176,6 +184,19 @@ function activateBranch(cwd, config, branch = currentBranch(cwd)) {
   }
   ensureGitignore(cwd);
   return { branch, changed: previous !== undefined && previous !== branch, inheritedFrom };
+}
+
+/**
+ * Remove secrets, absolute paths and the username before anything is written, and note
+ * what was redacted in the header so the reader knows something was removed.
+ */
+function cleanDoc(doc, cwd, config) {
+  const { text, found } = sanitize(doc, { cwd, redact: config.redact });
+  const kinds = Object.entries(found);
+  if (!kinds.length) return text;
+  const total = kinds.reduce((n, [, c]) => n + c, 0);
+  const note = `- **Redacted:** ${total} secret${total === 1 ? '' : 's'} (${kinds.map(([k]) => k).join(', ')})`;
+  return text.replace(/^(- \*\*Summarizer:\*\* .*)$/m, `$1\n${note}`);
 }
 
 /** Starting handoff for a new branch: the parent's essentials, kept as background. */
@@ -349,6 +370,7 @@ module.exports = {
   branchPaths,
   loadState,
   saveState,
+  lastProcessed,
   gatherSessions,
   updateHandoff,
   activateBranch,

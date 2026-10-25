@@ -135,6 +135,9 @@ const USERNAME_RE = USERNAME.length >= 6 ? new RegExp(`\\b${USERNAME.replace(/[.
 
 const tildify = (p) => shortenPaths(p, '\0');
 
+/** Quote a string for POSIX sh so it is always one literal word. */
+const shellQuote = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
+
 function rel(cwd, file) {
   return path.relative(cwd, file).split(path.sep).join('/');
 }
@@ -161,6 +164,7 @@ module.exports = {
   truncate,
   upsertManagedBlock,
   shortenPaths,
+  shellQuote,
   tildify,
   rel,
 };

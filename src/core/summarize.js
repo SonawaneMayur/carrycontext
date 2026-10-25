@@ -1,6 +1,7 @@
 // @ts-check
 const { truncate } = require('./util');
 const { getLlm } = require('../llm');
+const { sanitize } = require('./sanitize');
 
 /** Section order of the handoff body. The LLM is asked for exactly these. */
 const SECTIONS = ['Goal', 'Current state', 'Key decisions', 'Files & code', 'Open tasks', 'Next steps', 'Gotchas'];
@@ -203,12 +204,12 @@ Rules:
  * LLM-written handoff sections.
  * @returns {Promise<Record<string, string>>}
  */
-async function llmSections(messages, prevDoc, { summarizer, maxTranscriptChars }, apiKey, repoState = '') {
+async function llmSections(messages, prevDoc, { summarizer, maxTranscriptChars, redact }, apiKey, repoState = '', cwd = '') {
   const client = getLlm(summarizer.provider);
   if (!client) throw new Error(`Unknown summarizer provider "${summarizer.provider}"`);
   if (client.needsKey && !apiKey) throw new Error(`No API key for ${summarizer.provider} (set it via "CarryContext: Set API Key" or ${client.envKey})`);
   const facts = extractFacts(messages);
-  const prompt = [
+  const rawPrompt = [
     prevDoc ? `<previous_handoff>\n${prevDoc}\n</previous_handoff>` : '',
     `<extracted_facts>\nEdited files: ${facts.edited.join(', ') || 'none'}\nCommands: ${facts.commands.slice(-20).join(' ; ') || 'none'}\nTodos: ${JSON.stringify(facts.todos || [])}\n</extracted_facts>`,
     repoState ? `<git_state>\nGround truth from git right now. Prefer it over the transcript where they disagree.\n${repoState}\n</git_state>` : '',
@@ -217,6 +218,8 @@ async function llmSections(messages, prevDoc, { summarizer, maxTranscriptChars }
   ]
     .filter(Boolean)
     .join('\n\n');
+  // Secrets and personal paths never leave the machine, even to the user's own LLM provider.
+  const prompt = sanitize(rawPrompt, { cwd, redact }).text;
   const text = await client.complete({
     model: summarizer.model || client.defaultModel,
     baseUrl: summarizer.baseUrl,

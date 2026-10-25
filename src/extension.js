@@ -3,12 +3,12 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const { saveConfig } = require('./core/config');
-const { paths, loadState, gatherSessions, updateHandoff, activateBranch, listSavedHandoffs, syncTargets, resumePrompt } = require('./core/handoff');
+const { paths, loadState, lastProcessed, gatherSessions, updateHandoff, activateBranch, listSavedHandoffs, syncTargets, resumePrompt } = require('./core/handoff');
 const { currentBranch, headFile } = require('./core/git');
 const { installClaudeHooks, updateHookSettings, writeHookScript, hooksInstalled, processPayload, pendingPayloads } = require('./core/claudeHooks');
 const { getProvider, listProviders } = require('./providers');
 const { getLlm, listLlms } = require('./llm');
-const { ago, readText } = require('./core/util');
+const { ago, readText, shellQuote: posixQuote } = require('./core/util');
 const { HandoffTree } = require('./sidebar');
 
 const POLL_MS = 30000;
@@ -45,6 +45,7 @@ function activate(context) {
       handoffLimit: c.get('handoffLimit', 50),
       maxTranscriptChars: c.get('maxTranscriptChars', 150000),
       autoUpdate: { enabled: c.get('autoUpdate.enabled', true), idleSeconds: c.get('autoUpdate.idleSeconds', 120) },
+      redact: { enabled: c.get('redact.enabled', true), extraPatterns: c.get('redact.extraPatterns', []) },
     };
   };
   const tree = new HandoffTree(cwd, config);
@@ -127,7 +128,7 @@ function activate(context) {
     const idleMs = c.autoUpdate.idleSeconds * 1000;
     for (const { adapter, ref } of await gatherSessions(dir, c)) {
       if (adapter.id === 'claude' && claudeHooked) continue; // hooks already cover Claude
-      if (Date.now() - ref.updatedAt < idleMs || state.processed?.[ref.path] >= ref.updatedAt) continue;
+      if (Date.now() - ref.updatedAt < idleMs || lastProcessed(state, ref.path) >= ref.updatedAt) continue;
       busy = true;
       try {
         await compact([{ adapter, ref }], `auto:idle:${adapter.id}`, { open: false });
@@ -399,7 +400,7 @@ async function launch(cwd, providerId) {
   }
 }
 
-const shellQuote = (s) => (process.platform === 'win32' ? `"${s.replace(/"/g, '\\"')}"` : `'${s.replace(/'/g, `'\\''`)}'`);
+const shellQuote = (s) => (process.platform === 'win32' ? `"${s.replace(/"/g, '\\"')}"` : posixQuote(s));
 
 function deactivate() {}
 

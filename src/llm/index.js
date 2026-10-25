@@ -120,7 +120,7 @@ const clients = {
     label: 'OpenAI-compatible (OpenRouter, Groq, Mistral, LM Studio, ...)',
     defaultModel: '',
     envKey: 'OPENAI_COMPATIBLE_API_KEY',
-    complete: (a) => {
+    async complete(a) {
       if (!a.baseUrl) throw new Error('carrycontext.summarizer.baseUrl is required for openai-compatible');
       return openAiChat(a, a.baseUrl);
     },

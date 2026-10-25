@@ -189,6 +189,19 @@
           "default": 50,
           "description": "How many named handoff files to keep in .carrycontext/handoffs (oldest are deleted first)."
         },
+        "carrycontext.redact.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Replace API keys, tokens, passwords and private keys with [REDACTED:…] in handoffs and in text sent to the summarizer LLM."
+        },
+        "carrycontext.redact.extraPatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Extra regular expressions to redact (for example your company's internal token format)."
+        },
         "carrycontext.plainTerminalPrompt": {
           "type": "boolean",
           "default": false,
