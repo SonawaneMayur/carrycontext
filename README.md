@@ -71,7 +71,7 @@ Not handled yet: merging a branch doesn't merge its handoff into the target bran
 
 - **PreCompact** (manual `/compact` and auto-compact) → refresh the handoff
 - **SessionEnd** (exit, `/clear`, logout) → refresh the handoff
-- **SessionStart** (`startup` and `clear` only) → print `.claude/handoff.md` so the new session starts with it
+- **SessionStart** (`startup`, `clear` and `compact`) → print the current branch's handoff, so a new session starts with it and a compacted one gets it back right after the summary
 
 The command also adds a **`/compact-all`** slash command (`.claude/commands/compact-all.md`). It has Claude write the handoff itself, which gives the best summary, and then copies it to every provider's location. A useful sequence is `/compact-all`, then `/compact` or `/clear`.
 

@@ -5,7 +5,7 @@ const fs = require('fs');
 const { saveConfig } = require('./core/config');
 const { paths, loadState, gatherSessions, updateHandoff, activateBranch, listSavedHandoffs, syncTargets, resumePrompt } = require('./core/handoff');
 const { currentBranch, headFile } = require('./core/git');
-const { installClaudeHooks, writeHookScript, hooksInstalled, processPayload, pendingPayloads } = require('./core/claudeHooks');
+const { installClaudeHooks, updateHookSettings, writeHookScript, hooksInstalled, processPayload, pendingPayloads } = require('./core/claudeHooks');
 const { getProvider, listProviders } = require('./providers');
 const { getLlm, listLlms } = require('./llm');
 const { ago, readText } = require('./core/util');
@@ -321,7 +321,10 @@ function activate(context) {
   if (dir) {
     persistConfig();
     // The extension path and Node path change on updates, so keep the hook script current.
-    if (hooksInstalled(dir)) writeHookScript(dir, cliPath, process.execPath);
+    if (hooksInstalled(dir)) {
+      writeHookScript(dir, cliPath, process.execPath);
+      updateHookSettings(dir, false); // e.g. adds the "compact" matcher to older installs
+    }
     else if (config().sources.includes('claude') && !context.workspaceState.get('claudeHooksPrompted')) {
       context.workspaceState.update('claudeHooksPrompted', true);
       vscode.window

@@ -16,8 +16,9 @@ const hookCommand = (arg) => `sh "$CLAUDE_PROJECT_DIR/${HOOK_MARK}" ${arg}`;
 const HOOKS = {
   PreCompact: { arg: 'update', timeout: 30 },
   SessionEnd: { arg: 'update', timeout: 30 },
-  // Only fresh sessions: a resumed session already has its context.
-  SessionStart: { arg: 'session-start', timeout: 10, matcher: 'startup|clear' },
+  // Fresh sessions, and right after compaction so the summary doesn't lose the handoff.
+  // A resumed session already has its context.
+  SessionStart: { arg: 'session-start', timeout: 10, matcher: 'startup|clear|compact' },
 };
 
 /**
@@ -74,15 +75,7 @@ esac
 function installClaudeHooks(cwd, cliPath, nodePath) {
   writeHookScript(cwd, cliPath, nodePath);
 
-  const file = settingsPath(cwd);
-  const settings = readJson(file, {});
-  settings.hooks ||= {};
-  for (const [event, { arg, timeout, matcher }] of Object.entries(HOOKS)) {
-    const entries = (settings.hooks[event] ||= []);
-    const ours = entries.some((e) => (e.hooks || []).some((h) => String(h.command || '').includes(HOOK_MARK)));
-    if (!ours) entries.push({ ...(matcher ? { matcher } : {}), hooks: [{ type: 'command', command: hookCommand(arg), timeout }] });
-  }
-  writeFile(file, JSON.stringify(settings, null, 2) + '\n');
+  updateHookSettings(cwd, true);
 
   const cmd = path.join(cwd, '.claude', 'commands', 'compact-all.md');
   // Refresh our own command file, but leave it alone if the user rewrote it.
@@ -97,6 +90,27 @@ function writeHookScript(cwd, cliPath, nodePath) {
     writeFile(file, content);
     fs.chmodSync(file, 0o755);
   }
+}
+
+/**
+ * Add our hook entries, or bring existing ones up to date (matcher, command, timeout).
+ * Only entries that run our hook script are touched.
+ */
+function updateHookSettings(cwd, addMissing) {
+  const file = settingsPath(cwd);
+  const before = readText(file);
+  const settings = readJson(file, {});
+  settings.hooks ||= {};
+  for (const [event, { arg, timeout, matcher }] of Object.entries(HOOKS)) {
+    if (!settings.hooks[event] && !addMissing) continue;
+    const entries = (settings.hooks[event] ||= []);
+    const wanted = { ...(matcher ? { matcher } : {}), hooks: [{ type: 'command', command: hookCommand(arg), timeout }] };
+    const i = entries.findIndex((e) => (e.hooks || []).some((h) => String(h.command || '').includes(HOOK_MARK)));
+    if (i >= 0) entries[i] = wanted;
+    else if (addMissing) entries.push(wanted);
+  }
+  const after = JSON.stringify(settings, null, 2) + '\n';
+  if (after !== before) writeFile(file, after);
 }
 
 function hooksInstalled(cwd) {
@@ -176,4 +190,4 @@ Write a handoff document so this work can continue in a new session, possibly in
 $ARGUMENTS
 `;
 
-module.exports = { installClaudeHooks, writeHookScript, hooksInstalled, processPayload, pendingPayloads };
+module.exports = { installClaudeHooks, updateHookSettings, writeHookScript, hooksInstalled, processPayload, pendingPayloads };
