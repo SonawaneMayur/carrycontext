@@ -23,7 +23,8 @@
     "url": "https://github.com/SonawaneMayur/carrycontext/issues"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.85.0",
+    "node": ">=22"
   },
   "categories": [
     "AI",
@@ -32,6 +33,12 @@
   "main": "./src/extension.js",
   "bin": {
     "carrycontext": "./bin/carrycontext.js"
+  },
+  "scripts": {
+    "test": "node --test \"test/**/*.test.js\"",
+    "test:coverage": "node --test --experimental-test-coverage --test-coverage-exclude=\"test/**\" --test-coverage-lines=90 --test-coverage-functions=85 --test-coverage-branches=75 \"test/**/*.test.js\"",
+    "check": "node scripts/check.js",
+    "package": "npx --yes @vscode/vsce@3 package"
   },
   "activationEvents": [
     "onStartupFinished"
