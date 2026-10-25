@@ -11,7 +11,15 @@ By **[Mayur Sonawane](https://github.com/SonawaneMayur)** · [GitHub repo](https
 
 Compact your AI coding sessions into one portable `handoff.md`, then pick up the work in a new session or in another provider's assistant (Claude Code, Codex, Gemini CLI, Copilot, Cursor, or any chat via the clipboard).
 
-## Run it
+## Install
+
+1. Download `carrycontext-<version>.vsix` from the [latest release](https://github.com/SonawaneMayur/carrycontext/releases/latest).
+2. In VS Code, open the Extensions view (`Cmd+Shift+X` / `Ctrl+Shift+X`), click **…** at the top, choose **Install from VSIX…** and pick the file.
+3. Reload the window. The rocket icon appears in the Activity Bar.
+
+From a terminal: `code --install-extension carrycontext-<version>.vsix`. To check the download, compare `shasum -a 256 carrycontext-<version>.vsix` with `SHA256SUMS.txt` from the same release.
+
+## Run it from source
 
 No build step and no dependencies. Open this folder in VS Code and press **F5** to start an Extension Development Host. In that window, open a project and run commands from the Command Palette (`CarryContext: …`).
 

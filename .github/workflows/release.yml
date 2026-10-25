@@ -1,0 +1,48 @@
+name: Release
+
+# Push a tag like v0.2.0 to build the .vsix and publish a GitHub Release.
+on:
+  push:
+    tags: ['v*.*.*']
+
+permissions:
+  contents: write # create the release and upload its files
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Check the tag matches package.json
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $version"
+            exit 1
+          fi
+      - name: Check and test
+        run: |
+          npm run check
+          npm test
+      - name: Build the .vsix and its checksum
+        run: |
+          file="carrycontext-${GITHUB_REF_NAME#v}.vsix"
+          npx --yes @vscode/vsce@3 package --out "$file"
+          sha256sum "$file" > SHA256SUMS.txt
+      - name: Write release notes from CHANGELOG.md
+        run: node scripts/release-notes.js "${GITHUB_REF_NAME#v}" > release-notes.md
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" carrycontext-*.vsix SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "CarryContext $GITHUB_REF_NAME" \
+            --notes-file release-notes.md \
+            --verify-tag

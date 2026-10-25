@@ -2,7 +2,7 @@
   "name": "carrycontext",
   "displayName": "CarryContext",
   "description": "Compact AI coding sessions into a portable handoff.md and resume in any LLM provider (Claude Code, Codex, Gemini, Copilot, Cursor, ...).",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "sonawanemayur",
   "author": {
     "name": "Mayur Sonawane",
