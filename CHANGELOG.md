@@ -4,6 +4,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-25
+
 ### Added
 
 - **Verified handoffs:** each handoff checks the session's claims against git and the session's recorded results: file edits, the last run of each test and build command, and commits it mentions. Results appear as a **Verification** section (✅ verified, ⚠️ unverified, ❌ contradicted) and a header line, and contradicted claims become the first **Next steps**. Never runs project code. Setting: `carrycontext.verify.enabled`.
@@ -45,7 +47,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/SonawaneMayur/carrycontext/compare/4a22e03...v0.2.0
 [0.1.0]: https://github.com/SonawaneMayur/carrycontext/commit/4a22e03
