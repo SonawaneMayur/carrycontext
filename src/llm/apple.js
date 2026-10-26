@@ -33,7 +33,7 @@ const PROFILE =
 const FIXES = {
   platform: 'Needs an Apple-silicon Mac with macOS 26 or later.',
   toolchain: 'Install the Xcode Command Line Tools once (run: xcode-select --install). CarryContext builds a small helper with them.',
-  sandbox: "macOS's sandbox tool (/usr/bin/sandbox-exec) is missing, so CarryContext won't run the helper unprotected.",
+  sandbox: "macOS couldn't apply the sandbox CarryContext requires (/usr/bin/sandbox-exec), so it won't run the helper unprotected.",
   cache: "CarryContext's private cache folder is not owned by you or is accessible to others, so the helper won't be built there.",
   build: 'Building the helper failed. Run "carrycontext doctor" for details.',
   deviceNotEligible: "This Mac doesn't support Apple Intelligence.",
@@ -53,10 +53,30 @@ function run(cmd, args) {
   }
 }
 
+let sandboxOk;
+/**
+ * Whether macOS lets us apply the sandbox here, checked once with a harmless command. It can
+ * fail, for example inside some virtual machines; then the helper is never run.
+ */
+function sandboxWorks() {
+  if (sandboxOk !== undefined) return sandboxOk;
+  try {
+    execFileSync(SANDBOX_EXEC, ['-D', `HOME=${realHome()}`, '-p', PROFILE, '/usr/bin/true'], {
+      stdio: 'ignore',
+      timeout: 10000,
+      env: { PATH: '/usr/bin:/bin', HOME: realHome() },
+    });
+    sandboxOk = true;
+  } catch {
+    sandboxOk = false;
+  }
+  return sandboxOk;
+}
+
 /** Unavailable reason code, or null when this Mac can run the helper at all. */
 function platformProblem() {
   if (process.platform !== 'darwin' || Number(os.release().split('.')[0]) < 25) return 'platform'; // Darwin 25 = macOS 26
-  if (!fs.existsSync(SANDBOX_EXEC)) return 'sandbox';
+  if (!fs.existsSync(SANDBOX_EXEC) || !sandboxWorks()) return 'sandbox';
   return null;
 }
 
@@ -219,6 +239,7 @@ async function completeJson(a) {
 
 /** @type {import('./index').LlmClient & {completeJson: typeof completeJson}} */
 module.exports = {
+  PROFILE_FOR_TESTS: PROFILE,
   label: 'Apple on-device (Apple Intelligence)',
   defaultModel: 'system',
   local: true,

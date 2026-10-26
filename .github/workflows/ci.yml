@@ -33,7 +33,14 @@ jobs:
       - name: Syntax and manifest check
         run: npm run check
       - name: Tests with coverage minimums
-        run: npm run test:coverage
+        shell: bash
+        run: |
+          set -o pipefail
+          npm run test:coverage 2>&1 | tee test-output.txt
+      - name: Show failing tests as annotations
+        if: failure()
+        shell: bash
+        run: grep -E "^✖|AssertionError|Error:|actual:|expected:" test-output.txt | head -25 | sed 's/^/::error::/' || true
 
   package:
     name: Build .vsix

@@ -29,7 +29,23 @@ const hasDevTools = (() => {
     return false;
   }
 })();
-const macOnly = !(isMac && hasDevTools) && 'needs macOS 26 with the developer tools';
+// The protocol and sandbox tests need a Mac where the sandbox can be applied (some virtual
+// machines don't allow it) and where the fake helper can start inside it.
+const canSandbox = (() => {
+  if (!isMac || !hasDevTools) return false;
+  try {
+    const profile = require('../src/llm/apple').PROFILE_FOR_TESTS;
+    execFileSync('/usr/bin/sandbox-exec', ['-D', `HOME=${os.userInfo().homedir}`, '-p', profile, FAKE, '--status'], {
+      stdio: 'pipe',
+      timeout: 20000,
+      env: { PATH: '/usr/bin:/bin', HOME: os.userInfo().homedir },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+})();
+const macOnly = !canSandbox && 'needs macOS 26, the developer tools, and a Mac that allows the sandbox';
 
 /** Load a fresh copy of the client so each test controls the environment it reads. */
 function client({ fake = true, timeoutMs } = {}) {
@@ -42,10 +58,12 @@ function client({ fake = true, timeoutMs } = {}) {
 }
 const ask = (apple, prompt, system = 'sys') => apple.complete({ model: 'system', system, prompt });
 
-test('refuses to run anywhere it cannot sandbox the helper (fails closed)', { skip: isMac && 'runs on other platforms' }, async () => {
+test('refuses to run anywhere it cannot sandbox the helper (fails closed)', { skip: canSandbox && 'the sandbox works here' }, async () => {
   const apple = client();
-  assert.deepEqual((await apple.status()).ready, false);
-  await assert.rejects(ask(apple, 'hello'), (e) => e.code === 'platform');
+  const status = await apple.status();
+  assert.equal(status.ready, false);
+  assert.ok(['platform', 'sandbox', 'toolchain'].includes(status.code), status.code);
+  await assert.rejects(ask(apple, 'hello'), (e) => ['platform', 'sandbox'].includes(e.code));
 });
 
 test('protocol: status, text and structured answers', { skip: macOnly }, async () => {
