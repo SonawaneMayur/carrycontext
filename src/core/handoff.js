@@ -10,12 +10,13 @@ const crypto = require('crypto');
 const { dataDir } = require('./config');
 const { writeFile, readText, readJson, listFiles, mtime, upsertManagedBlock, rel } = require('./util');
 const { sanitize } = require('./sanitize');
-const { SECTIONS, parseSections, heuristicSections, llmSections, shortText, mergeDecisions, extractFacts } = require('./summarize');
-const { currentBranch, branchSlug, repoState } = require('./git');
+const { SECTIONS, parseSections, heuristicSections, llmSections, shortText, mergeDecisions } = require('./summarize');
+const { verifyClaims, countClaims, renderClaims, summaryLine } = require('./claims');
+const { currentBranch, branchSlug, gitView, repoState } = require('./git');
 const { getProvider, listProviders } = require('../providers');
 const { getLlm } = require('../llm');
 
-const RENDER_ORDER = ['Goal', 'Background', 'Current state', 'Recent requests', 'Key decisions', 'Files & code', 'Repository state', 'Commands run', 'Open tasks', 'Next steps', 'Gotchas'];
+const RENDER_ORDER = ['Goal', 'Background', 'Current state', 'Verification', 'Recent requests', 'Key decisions', 'Files & code', 'Repository state', 'Commands run', 'Open tasks', 'Next steps', 'Gotchas'];
 
 function paths(cwd) {
   const dir = dataDir(cwd);
@@ -106,7 +107,7 @@ async function updateHandoff({ cwd, sessions, trigger, config, getApiKey }) {
   state.processed ||= {};
   for (const key of Object.keys(state.processed)) if (key.includes('/') || key.includes('\\')) delete state.processed[key]; // pre-0.2 entries
   for (const { ref } of sessions) state.processed[sessionKey(ref.path)] = mtime(ref.path);
-  Object.assign(state, { lastUpdated: new Date().toISOString(), trigger, sources, summarizer: result.summarizer });
+  Object.assign(state, { lastUpdated: new Date().toISOString(), trigger, sources, summarizer: result.summarizer, verification: result.verification });
   saveState(cwd, state);
   return { ...result, file: paths(cwd).handoff, branches: [...groups.keys()].filter(Boolean) };
 }
@@ -116,7 +117,12 @@ async function writeBranchHandoff({ cwd, branch, current, messages, sessions, so
   const prevDoc = readText(bp.handoff);
   const prev = parseSections(prevDoc);
   // git only describes the checked-out branch; other branches keep their last snapshot.
-  const repo = branch === current ? repoState(cwd, extractFacts(messages).edited, ownFiles(cwd)) : '';
+  const isCurrent = branch === current;
+  const view = isCurrent ? gitView(cwd, ownFiles(cwd)) : null;
+  const repo = view ? repoState(cwd, view) : '';
+  const claims = isCurrent && config.verify?.enabled !== false ? verifyClaims(messages, { cwd, git: view }) : [];
+  const verification = renderClaims(claims);
+  const groundTruth = [repo, verification && `Verification of the session's claims:\n${verification}`].filter(Boolean).join('\n\n');
 
   let sections;
   let summarizer = 'heuristic';
@@ -124,7 +130,7 @@ async function writeBranchHandoff({ cwd, branch, current, messages, sessions, so
   if (config.summarizer.provider !== 'none') {
     try {
       const apiKey = await getApiKey(config.summarizer.provider);
-      sections = await llmSections(messages, prevDoc, config, apiKey, repo, cwd);
+      sections = await llmSections(messages, prevDoc, config, apiKey, groundTruth, cwd);
       summarizer = `${config.summarizer.provider}:${config.summarizer.model || getLlm(config.summarizer.provider)?.defaultModel}`;
     } catch (e) {
       warning = `Summarizer failed, used heuristic instead: ${e.message}`;
@@ -132,6 +138,14 @@ async function writeBranchHandoff({ cwd, branch, current, messages, sessions, so
   }
   sections ||= heuristicSections(messages, prev);
   sections['Repository state'] = repo || prev['Repository state'] || '';
+  sections.Verification = verification || (isCurrent ? '' : prev.Verification || '');
+  // Contradicted claims become the first next steps, so the next assistant fixes them instead
+  // of building on them. Earlier fix items are replaced, not repeated.
+  const fixes = claims.filter((c) => c.next).map((c) => `- ❌ ${c.next}`);
+  if (isCurrent) {
+    const rest = (sections['Next steps'] || '').split('\n').filter((l) => !l.startsWith('- ❌ ')).join('\n').trim();
+    sections['Next steps'] = [...fixes, rest].filter(Boolean).join('\n');
+  }
   // Context inherited from the parent branch is kept until the branch's own work replaces it.
   if (prev.Background && !sections.Background) sections.Background = prev.Background;
   // Decisions only accumulate, so repeated compactions can't summarize them away.
@@ -144,9 +158,10 @@ async function writeBranchHandoff({ cwd, branch, current, messages, sessions, so
   const description = shortText(sections['Short description'] || sections.Goal || '', 8) || 'handoff';
   delete sections['Short description'];
 
-  const doc = cleanDoc(renderDoc({ cwd, branch, sections, sources, trigger, summarizer, warning, session, description }), cwd, config);
+  const counts = claims.length ? countClaims(claims) : null;
+  const doc = cleanDoc(renderDoc({ cwd, branch, sections, sources, trigger, summarizer, warning, session, description, counts }), cwd, config);
   const sessionFile = saveHandoff(cwd, doc, config, branch, handoffFileName(sessions, session, description));
-  return { doc, sessionFile, warning, summarizer, branch };
+  return { doc, sessionFile, warning, summarizer, branch, verification: counts };
 }
 
 /**
@@ -259,7 +274,7 @@ function slugify(text, max = 50) {
   return slug.slice(0, max).replace(/-[^-]*$/, '');
 }
 
-function renderDoc({ cwd, branch, sections, sources, trigger, summarizer, warning, session, description }) {
+function renderDoc({ cwd, branch, sections, sources, trigger, summarizer, warning, session, description, counts = null }) {
   const keys = [...RENDER_ORDER, ...Object.keys(sections).filter((k) => !RENDER_ORDER.includes(k))];
   const body = keys
     .filter((k) => sections[k] && sections[k].trim())
@@ -278,7 +293,7 @@ function renderDoc({ cwd, branch, sections, sources, trigger, summarizer, warnin
 - **Updated:** ${new Date().toISOString()}
 - **Trigger:** ${trigger}
 - **Sources:** ${sources.map((s) => `${s.provider} \`${s.id.slice(0, 8)}\` (${s.messages} msgs)`).join(', ') || 'none'}
-- **Summarizer:** ${summarizer}${warning ? `\n- **Note:** ${warning}` : ''}
+- **Summarizer:** ${summarizer}${counts ? `\n- **Verification:** ${summaryLine(counts)}` : ''}${warning ? `\n- **Note:** ${warning}` : ''}
 
 ${body}
 `;

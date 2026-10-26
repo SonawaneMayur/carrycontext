@@ -39,6 +39,25 @@ function contentText(content) {
     .join('\n');
 }
 
+/** Codex outputs are JSON like {"output": "...", "metadata": {"exit_code": 0}} or plain text. */
+function attachResult(call, output) {
+  if (!call) return;
+  let exit;
+  try {
+    const parsed = typeof output === 'string' ? JSON.parse(output) : output;
+    exit = parsed?.metadata?.exit_code ?? parsed?.exit_code;
+  } catch {
+    const m = String(output).match(/exit[ _]code:?\s*(\d+)/i);
+    if (m) exit = Number(m[1]);
+  }
+  if (typeof exit === 'number') {
+    call.exitCode = exit;
+    call.ok = exit === 0;
+  } else if (/^\s*(error|failed)\b/i.test(String(output))) {
+    call.ok = false;
+  }
+}
+
 /** @type {import('./types').ProviderAdapter} */
 module.exports = {
   id: 'codex',
@@ -61,6 +80,8 @@ module.exports = {
     /** @type {import('./types').Message[]} */
     const out = [];
     let branch;
+    /** @type {Map<string, import('./types').ToolCall>} */
+    const calls = new Map();
     for (const line of readJsonl(ref.path)) {
       if (line.type === 'session_meta') branch = line.payload?.git?.branch || branch;
       const item = line.type === 'response_item' ? line.payload : line;
@@ -81,9 +102,12 @@ module.exports = {
           }
         }
         const last = out[out.length - 1];
-        const call = { name: item.name || item.type, input };
+        const call = { name: item.name || item.type, input, id: item.call_id };
+        if (item.call_id) calls.set(item.call_id, call);
         if (last && last.role === 'assistant') (last.tools ||= []).push(call);
         else out.push({ role: 'assistant', text: '', ts, provider: 'codex', tools: [call], branch });
+      } else if (/_output$/.test(item.type || '') && item.call_id) {
+        attachResult(calls.get(item.call_id), item.output);
       }
     }
     return out;

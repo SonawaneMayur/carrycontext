@@ -52,7 +52,7 @@ test('repoState: branch, ahead count, changes, and own files hidden', { skip }, 
   fs.mkdirSync(path.join(repo, '.claude'));
   fs.writeFileSync(path.join(repo, '.claude', 'handoff.md'), 'ours');
 
-  const state = g.repoState(repo, [], [path.join(repo, '.claude', 'handoff.md')]);
+  const state = g.repoState(repo, g.gitView(repo, [path.join(repo, '.claude', 'handoff.md')]));
   assert.match(state, /\*\*Branch:\*\* `feature\/pay` \(1 commit ahead of `main`\)/);
   assert.match(state, /Last commit:\*\* `[0-9a-f]+` Add pay/);
   assert.match(state, /modified: `README\.md`/); // first status line keeps its full name
@@ -60,15 +60,18 @@ test('repoState: branch, ahead count, changes, and own files hidden', { skip }, 
   assert.doesNotMatch(state, /handoff\.md/);
 });
 
-test('repoState flags claimed edits git shows no change for, except ignored files', { skip }, () => {
+test('gitView: changes, ignored files and commits', { skip }, () => {
   const repo = env.project({ git: true });
   fs.writeFileSync(path.join(repo, '.gitignore'), '.env\n');
   fs.appendFileSync(path.join(repo, 'README.md'), 'changed');
-  const state = g.repoState(repo, [path.join(repo, 'README.md'), path.join(repo, 'ghost.js'), path.join(repo, '.env')]);
-  const flagged = state.split('**Check these:**')[1] || '';
-  assert.match(flagged, /ghost\.js/);
-  assert.doesNotMatch(flagged, /README\.md/);
-  assert.doesNotMatch(flagged, /\.env/);
+  const view = g.gitView(repo);
+  assert.match(view.changeOf('README.md'), /uncommitted change \(modified\)/);
+  assert.equal(view.changeOf('ghost.js'), null);
+  assert.equal(view.isIgnored('.env'), true);
+  assert.equal(view.isIgnored('README.md'), false);
+  assert.equal(view.commitExists(git(repo, 'rev-parse', '--short', 'HEAD')), true);
+  assert.equal(view.commitExists('deadbee'), false);
+  assert.equal(view.relative(path.join(env.root, 'outside.js')), null);
 });
 
 test('repoState is empty outside git', () => {

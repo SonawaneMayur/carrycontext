@@ -12,6 +12,7 @@ const { readJson, writeFile } = require('./util');
  * @property {number} maxTranscriptChars
  * @property {{enabled: boolean, idleSeconds: number}} autoUpdate
  * @property {{enabled: boolean, extraPatterns: string[]}} redact   secret redaction (see src/security/secrets.js)
+ * @property {{enabled: boolean}} verify   check the session's claims against git and recorded results
  */
 
 /** @type {Config} */
@@ -24,6 +25,7 @@ const DEFAULTS = {
   maxTranscriptChars: 150000,
   autoUpdate: { enabled: true, idleSeconds: 120 },
   redact: { enabled: true, extraPatterns: [] },
+  verify: { enabled: true },
 };
 
 const dataDir = (cwd) => path.join(cwd, '.carrycontext');
@@ -38,6 +40,7 @@ function loadConfig(cwd) {
     summarizer: { ...DEFAULTS.summarizer, ...(file.summarizer || {}) },
     autoUpdate: { ...DEFAULTS.autoUpdate, ...(file.autoUpdate || {}) },
     redact: { ...DEFAULTS.redact, ...(file.redact || {}) },
+    verify: { ...DEFAULTS.verify, ...(file.verify || {}) },
   };
 }
 

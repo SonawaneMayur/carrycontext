@@ -91,6 +91,30 @@ The **Key decisions** section only grows. Each handoff adds new decisions to the
 - Store handoffs per branch, so contexts never mix _(2026-10-25 · main)_
 ```
 
+## Verified handoffs
+
+A summary can be wrong: a session may say it edited a file it never wrote, or that tests pass when the last run failed. Every handoff checks what the session claims against git and the session's own recorded results, and says what it found:
+
+```
+- **Verification:** 36 verified, 4 unverified, 0 contradicted
+
+## Verification
+- ❌ `src/webhook.js` edited: reported as edited, but the file doesn't exist
+- ⚠️ `npm test`: passed at 11:05, but 2 files were edited afterwards
+- ✅ `src/pay.js` edited: uncommitted change (modified)
+- ✅ commit `4a09a1a` mentioned in the session: exists in this repo
+```
+
+| Checks | ✅ verified | ⚠️ unverified | ❌ contradicted |
+|---|---|---|---|
+| **File edits** (failed edits are ignored) | git shows a change, or a commit touched the file after the edit; outside git, the file changed after the edit | no change visible | the file doesn't exist |
+| **Tests and builds** (`npm test`, `pytest`, `go test`, `cargo test`, `tsc`, `npm run build`, …): the last run of each | passed, nothing edited since | passed but files changed afterwards, or no result recorded | the last run failed |
+| **Commits the session mentions** | the commit exists | not in this repo (another repo, or an example?) | (not used) |
+
+Each ❌ also becomes the first item under **Next steps**, so the next assistant fixes it instead of building on it, and an LLM summarizer is told not to describe it as done. The sidebar shows the counts next to **Latest handoff**.
+
+Verification only reads git, the file system and the transcript; it never runs your project's code. Turn it off with `carrycontext.verify.enabled`. Claims made only in prose ("I migrated the database") aren't checked yet.
+
 ## Repository state from git
 
 Every handoff includes a **Repository state** section read from git, not from the conversation, so the next assistant gets facts it can check:

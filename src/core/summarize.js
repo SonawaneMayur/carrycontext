@@ -204,7 +204,7 @@ Rules:
  * LLM-written handoff sections.
  * @returns {Promise<Record<string, string>>}
  */
-async function llmSections(messages, prevDoc, { summarizer, maxTranscriptChars, redact }, apiKey, repoState = '', cwd = '') {
+async function llmSections(messages, prevDoc, { summarizer, maxTranscriptChars, redact }, apiKey, groundTruth = '', cwd = '') {
   const client = getLlm(summarizer.provider);
   if (!client) throw new Error(`Unknown summarizer provider "${summarizer.provider}"`);
   if (client.needsKey && !apiKey) throw new Error(`No API key for ${summarizer.provider} (set it via "CarryContext: Set API Key" or ${client.envKey})`);
@@ -212,7 +212,9 @@ async function llmSections(messages, prevDoc, { summarizer, maxTranscriptChars, 
   const rawPrompt = [
     prevDoc ? `<previous_handoff>\n${prevDoc}\n</previous_handoff>` : '',
     `<extracted_facts>\nEdited files: ${facts.edited.join(', ') || 'none'}\nCommands: ${facts.commands.slice(-20).join(' ; ') || 'none'}\nTodos: ${JSON.stringify(facts.todos || [])}\n</extracted_facts>`,
-    repoState ? `<git_state>\nGround truth from git right now. Prefer it over the transcript where they disagree.\n${repoState}\n</git_state>` : '',
+    groundTruth
+      ? `<ground_truth>\nChecked against git and the session's recorded results right now. Prefer this over the transcript where they disagree, and never describe a contradicted claim as done.\n${groundTruth}\n</ground_truth>`
+      : '',
     `<transcript>\n${condense(messages, maxTranscriptChars)}\n</transcript>`,
     'Write the handoff now.',
   ]
@@ -232,4 +234,16 @@ async function llmSections(messages, prevDoc, { summarizer, maxTranscriptChars, 
   return sections;
 }
 
-module.exports = { SECTIONS, extractFacts, condense, parseSections, heuristicSections, llmSections, shortText, mergeDecisions, constraintStatements };
+module.exports = {
+  SECTIONS,
+  EDIT_TOOLS,
+  SHELL_TOOLS,
+  extractFacts,
+  condense,
+  parseSections,
+  heuristicSections,
+  llmSections,
+  shortText,
+  mergeDecisions,
+  constraintStatements,
+};

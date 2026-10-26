@@ -46,6 +46,7 @@ function activate(context) {
       maxTranscriptChars: c.get('maxTranscriptChars', 150000),
       autoUpdate: { enabled: c.get('autoUpdate.enabled', true), idleSeconds: c.get('autoUpdate.idleSeconds', 120) },
       redact: { enabled: c.get('redact.enabled', true), extraPatterns: c.get('redact.extraPatterns', []) },
+      verify: { enabled: c.get('verify.enabled', true) },
     };
   };
   const tree = new HandoffTree(cwd, config);
@@ -98,8 +99,10 @@ function activate(context) {
     const state = loadState(dir);
     const branch = currentBranch(dir);
     status.text = ['$(history) Handoff', branch, state.lastUpdated && ago(state.lastUpdated)].filter(Boolean).join(' · ');
+    const v = state.verification;
     status.tooltip = [
       state.lastUpdated ? `Last handoff: ${state.lastUpdated} (${state.trigger}, ${state.summarizer})` : 'No handoff yet.',
+      v && `Verification: ${v.verified} verified, ${v.unverified} unverified, ${v.contradicted} contradicted`,
       branch && `Branch: ${branch} (each branch keeps its own handoff)`,
       'Click for CarryContext actions',
     ]

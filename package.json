@@ -224,6 +224,11 @@
           "default": [],
           "description": "Extra regular expressions to redact (for example your company's internal token format)."
         },
+        "carrycontext.verify.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Check what the session claims it did (file edits, test and build results, commits) against git and the session's recorded results, and add a Verification section to each handoff. Never runs project code."
+        },
         "carrycontext.plainTerminalPrompt": {
           "type": "boolean",
           "default": false,

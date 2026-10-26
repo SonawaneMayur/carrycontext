@@ -45,6 +45,7 @@ Each extension point is a registry with a **contract test**: once you register s
 | An assistant (session reader and/or handoff target) | `src/providers/index.js` (`registerProvider`) | A writer in `SESSION_WRITERS` (`test/helpers/sessions.js`) that saves a session in that assistant's format |
 | A summarizer LLM | `src/llm/index.js` (`registerLlm`) | Its base path in `MOCK_BASE_PATHS` (`test/helpers/mockLlm.js`), and a response shape in `respond()` if the API is new |
 | A secret format | `src/security/secrets.js` (`registerSecretPattern` or the built-in list) | A fake example in `FAKE_SECRETS` (`test/helpers/fakeSecrets.js`), built at runtime so it never looks like a real key in the repo |
+| A verification check | `src/core/claims.js` (`registerClaimChecker`: `extract` claims from the session's steps, `verify` each one) | Cases in `test/claims.test.js` for verified, unverified and contradicted |
 | A cleaning step for output | `src/core/sanitize.js` (`registerSanitizer`) | A case in `test/secrets.test.js` or `test/security.test.js` |
 
 Rules that keep the project safe:

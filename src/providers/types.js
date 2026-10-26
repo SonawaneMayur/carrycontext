@@ -6,10 +6,20 @@
  * @typedef {Object} Message
  * @property {'user'|'assistant'|'system'} role
  * @property {string} text
- * @property {{name: string, input: any}[]} [tools]  tool calls made in this turn
+ * @property {ToolCall[]} [tools]                   tool calls made in this turn
  * @property {string} [ts]                            ISO timestamp
  * @property {string} [provider]
  * @property {string} [branch]                        git branch checked out when the message was sent
+ */
+
+/**
+ * A tool call, with its outcome when the transcript records one.
+ * @typedef {Object} ToolCall
+ * @property {string} name
+ * @property {any} input
+ * @property {string} [id]        provider's call id, used to match the result
+ * @property {boolean} [ok]       true = succeeded, false = failed, undefined = unknown
+ * @property {number} [exitCode]  for shell commands, when recorded
  */
 
 /**

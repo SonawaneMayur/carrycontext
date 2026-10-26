@@ -28,6 +28,9 @@ for (const provider of listProviders().filter((p) => p.listSessions)) {
     assert.ok(messages.some((m) => m.role === 'assistant' && /Tests added/.test(m.text)));
     const tools = messages.flatMap((m) => m.tools || []);
     assert.ok(JSON.stringify(tools).includes('pay.js'), 'file edits are visible as tool calls');
+    const testRun = tools.find((t) => JSON.stringify(t.input).includes('npm test'));
+    assert.ok(testRun, 'shell commands are visible as tool calls');
+    assert.equal(testRun.ok, true, 'tool results are attached to their calls (needed for verification)');
     assert.ok(messages.every((m) => m.provider === provider.id));
   });
 

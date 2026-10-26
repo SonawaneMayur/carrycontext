@@ -37,7 +37,12 @@ module.exports = {
     for (const m of data.messages || []) {
       if (m.type !== 'user' && m.type !== 'gemini') continue;
       const text = typeof m.content === 'string' ? m.content : (m.content || []).map((p) => p.text || '').join('\n');
-      const tools = (m.toolCalls || []).map((t) => ({ name: t.name, input: t.args }));
+      const tools = (m.toolCalls || []).map((t) => ({
+        name: t.name,
+        input: t.args,
+        id: t.id,
+        ok: t.status === 'success' ? true : t.status === 'error' ? false : undefined,
+      }));
       if (!text && !tools.length) continue;
       out.push({ role: m.type === 'user' ? 'user' : 'assistant', text, tools, ts: m.timestamp, provider: 'gemini' });
     }

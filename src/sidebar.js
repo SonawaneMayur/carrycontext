@@ -50,7 +50,9 @@ class HandoffTree {
     const state = loadState(dir);
     const branch = currentBranch(dir);
     const item = new vscode.TreeItem(branch ? `Latest handoff · ${branch}` : 'Latest handoff');
-    item.description = state.lastUpdated ? ago(state.lastUpdated) : '';
+    const v = state.verification;
+    const checks = v ? [v.verified && `✅${v.verified}`, v.unverified && `⚠️${v.unverified}`, v.contradicted && `❌${v.contradicted}`].filter(Boolean).join(' ') : '';
+    item.description = [checks, state.lastUpdated && ago(state.lastUpdated)].filter(Boolean).join(' · ');
     item.tooltip = `${state.trigger || ''} · ${state.summarizer || ''}\n${tildify(file)}`;
     item.iconPath = new vscode.ThemeIcon('note');
     item.contextValue = 'latest';

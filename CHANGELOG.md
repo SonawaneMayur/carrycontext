@@ -4,6 +4,16 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- **Verified handoffs:** each handoff checks the session's claims against git and the session's recorded results: file edits, the last run of each test and build command, and commits it mentions. Results appear as a **Verification** section (✅ verified, ⚠️ unverified, ❌ contradicted) and a header line, and contradicted claims become the first **Next steps**. Never runs project code. Setting: `carrycontext.verify.enabled`.
+- Transcript readers now record whether each tool call succeeded, and the exit code for shell commands (Claude Code, Codex, Gemini).
+- Checker registry (`registerClaimChecker`) so new kinds of checks plug in without other changes.
+
+### Changed
+
+- "Check these" moved from **Repository state** into the new **Verification** section.
+
 ## [0.2.1] - 2026-10-25
 
 ### Changed
