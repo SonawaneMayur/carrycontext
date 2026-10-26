@@ -4,6 +4,13 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-25
+
+### Changed
+
+- Marketplace listing is marked **Preview** and has search keywords (Claude, Codex, Gemini, Copilot, Cursor, handoff, context, ...).
+- The `.vsix` no longer includes development scripts.
+
 ## [0.2.0] - 2026-10-25
 
 ### Added
@@ -28,6 +35,7 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/SonawaneMayur/carrycontext/compare/4a22e03...v0.2.0
 [0.1.0]: https://github.com/SonawaneMayur/carrycontext/commit/4a22e03

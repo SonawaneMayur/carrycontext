@@ -5,3 +5,5 @@ test/**
 .editorconfig
 CONTRIBUTING.md
 CHANGELOG.md
+scripts/**
+.gitignore
