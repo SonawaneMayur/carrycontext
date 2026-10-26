@@ -4,6 +4,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-10-25
+
 ### Security
 
 - **A cloned repo could redirect summaries and the API key sent with them.** The summarizer provider, model and URL were read from workspace settings and from a project's `.carrycontext/config.json`, so a malicious repo could point them at its own server. They are now user-only: machine-scoped in VS Code, and read by the CLI and hooks from a per-user config file, never from the project. Redaction settings and the transcript size limit are user-only too. Only matters if you had set a summarizer API key; the default (`none`) sends nothing.
@@ -58,7 +60,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/SonawaneMayur/carrycontext/compare/4a22e03...v0.2.0
