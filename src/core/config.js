@@ -1,4 +1,6 @@
 // @ts-check
+const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { readJson, writeFile } = require('./util');
 
@@ -28,24 +30,88 @@ const DEFAULTS = {
   verify: { enabled: true },
 };
 
+/**
+ * Settings that decide where conversation data is sent, how much, and whether secrets are
+ * redacted. Only the user can set them: in VS Code they are machine-scoped (a repo's
+ * .vscode/settings.json is ignored), and the CLI reads them from the per-user config file,
+ * never from a project's .carrycontext/config.json. Otherwise a cloned repo could redirect
+ * summaries, and the API key sent with them, to its own server.
+ */
+const USER_ONLY = ['summarizer', 'redact', 'maxTranscriptChars'];
+
 const dataDir = (cwd) => path.join(cwd, '.carrycontext');
 const configPath = (cwd) => path.join(dataDir(cwd), 'config.json');
 
-/** Config shared by the extension and the CLI (hooks). Never holds API keys. */
-function loadConfig(cwd) {
-  const file = readJson(configPath(cwd), {});
+/** Per-user config file, outside every project. */
+function userConfigPath() {
+  const home = os.homedir();
+  if (process.platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'carrycontext', 'config.json');
+  if (process.platform === 'win32') return path.join(process.env.APPDATA || path.join(home, 'AppData', 'Roaming'), 'carrycontext', 'config.json');
+  return path.join(process.env.XDG_CONFIG_HOME || path.join(home, '.config'), 'carrycontext', 'config.json');
+}
+
+const pick = (obj, keep) => Object.fromEntries(Object.entries(obj || {}).filter(([k]) => keep(k)));
+const isUserOnly = (k) => USER_ONLY.includes(k);
+
+const clamp = (value, min, max, fallback) => (Number.isFinite(value) ? Math.min(max, Math.max(min, value)) : fallback);
+const strings = (value, fallback) => (Array.isArray(value) ? value.filter((v) => typeof v === 'string') : fallback);
+
+/**
+ * Fill in defaults and keep values in safe ranges, whoever wrote them. For example a
+ * handoffLimit of 0 would otherwise delete every saved handoff.
+ * @returns {Config}
+ */
+function normalizeConfig(raw) {
+  const c = raw || {};
   return {
-    ...DEFAULTS,
-    ...file,
-    summarizer: { ...DEFAULTS.summarizer, ...(file.summarizer || {}) },
-    autoUpdate: { ...DEFAULTS.autoUpdate, ...(file.autoUpdate || {}) },
-    redact: { ...DEFAULTS.redact, ...(file.redact || {}) },
-    verify: { ...DEFAULTS.verify, ...(file.verify || {}) },
+    summarizer: { ...DEFAULTS.summarizer, ...(c.summarizer || {}) },
+    sources: strings(c.sources, DEFAULTS.sources),
+    targets: strings(c.targets, DEFAULTS.targets),
+    lookbackHours: clamp(c.lookbackHours, 1, 24 * 90, DEFAULTS.lookbackHours),
+    handoffLimit: clamp(c.handoffLimit, 1, 1000, DEFAULTS.handoffLimit),
+    maxTranscriptChars: clamp(c.maxTranscriptChars, 2000, 1000000, DEFAULTS.maxTranscriptChars),
+    autoUpdate: {
+      enabled: c.autoUpdate?.enabled !== false,
+      idleSeconds: clamp(c.autoUpdate?.idleSeconds, 15, 86400, DEFAULTS.autoUpdate.idleSeconds),
+    },
+    redact: { enabled: c.redact?.enabled !== false, extraPatterns: strings(c.redact?.extraPatterns, []) },
+    verify: { enabled: c.verify?.enabled !== false },
   };
 }
 
-function saveConfig(cwd, config) {
-  writeFile(configPath(cwd), JSON.stringify(config, null, 2) + '\n');
+/** Config shared by the extension and the CLI (hooks). Never holds API keys. */
+function loadConfig(cwd) {
+  const project = pick(readJson(configPath(cwd), {}), (k) => !isUserOnly(k));
+  const user = pick(readJson(userConfigPath(), {}), isUserOnly);
+  return normalizeConfig({ ...project, ...user });
 }
 
-module.exports = { DEFAULTS, loadConfig, saveConfig, dataDir };
+/**
+ * User-only settings in the project's config.json that differ from the user's own, i.e.
+ * ones a project tried to change. They are ignored; callers can warn about them.
+ */
+function ignoredProjectSettings(cwd) {
+  const project = pick(readJson(configPath(cwd), {}), isUserOnly);
+  const effective = loadConfig(cwd);
+  return Object.keys(project).filter((k) => JSON.stringify(normalizeConfig({ ...effective, [k]: project[k] })[k]) !== JSON.stringify(effective[k]));
+}
+
+/** Write project settings to the project and user-only settings to the per-user file. */
+function saveConfig(cwd, config) {
+  writeFile(configPath(cwd), JSON.stringify(pick(config, (k) => !isUserOnly(k)), null, 2) + '\n');
+  saveUserConfig(pick(config, isUserOnly));
+}
+
+function saveUserConfig(values) {
+  const file = userConfigPath();
+  const dir = path.dirname(file);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  writeFile(file, JSON.stringify(values, null, 2) + '\n');
+  if (process.platform !== 'win32') {
+    // mkdir's mode only applies to a new folder, so tighten an existing one too.
+    fs.chmodSync(dir, 0o700);
+    fs.chmodSync(file, 0o600);
+  }
+}
+
+module.exports = { DEFAULTS, USER_ONLY, loadConfig, saveConfig, normalizeConfig, ignoredProjectSettings, userConfigPath, dataDir };

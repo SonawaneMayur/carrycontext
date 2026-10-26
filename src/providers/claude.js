@@ -15,6 +15,25 @@ function projectDir(cwd) {
   return fs.existsSync(dir) ? dir : null;
 }
 
+/**
+ * True only for a .jsonl transcript directly inside Claude Code's folder for this project,
+ * after resolving symlinks. Hook payloads name a transcript by path, and a file planted in
+ * .carrycontext/inbox must not be able to point at another project's conversation.
+ */
+function isOwnTranscript(cwd, file) {
+  try {
+    const real = fs.realpathSync(file);
+    if (!real.endsWith('.jsonl') || !fs.statSync(real).isFile()) return false;
+    const dirs = [...new Set([cwd, fs.realpathSync(cwd)])]
+      .map((c) => path.join(projectsRoot(), encodeCwd(c)))
+      .filter((d) => fs.existsSync(d))
+      .map((d) => fs.realpathSync(d));
+    return dirs.includes(path.dirname(real));
+  } catch {
+    return false;
+  }
+}
+
 // Harness noise that is not part of the real conversation.
 const NOISE = /^(<command-|<local-command-|<system-reminder>|Caveat: The messages below)/;
 // Context the IDE extension attaches to user prompts (opened file, selection, reminders).
@@ -24,6 +43,7 @@ const ATTACHED = /<(ide_[a-z_]+|system-reminder)>[\s\S]*?<\/\1>/g;
 module.exports = {
   id: 'claude',
   label: 'Claude Code',
+  isOwnTranscript,
 
   async listSessions(cwd) {
     const dir = projectDir(cwd);

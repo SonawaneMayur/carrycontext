@@ -21,7 +21,26 @@
 
 const TIMEOUT_MS = 120000;
 
+const LOOPBACK = /^(localhost|127(\.\d{1,3}){3}|\[::1\])$/i;
+
+/**
+ * Only https, or plain http to this machine (Ollama, LM Studio), and never credentials in the
+ * URL. Checked before every request, so a bad URL fails before any data leaves.
+ */
+function assertSafeUrl(raw) {
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    throw new Error('The summarizer URL is not a valid URL');
+  }
+  if (url.username || url.password) throw new Error('The summarizer URL must not contain a username or password');
+  if (url.protocol === 'https:' || (url.protocol === 'http:' && LOOPBACK.test(url.hostname))) return;
+  throw new Error(`Refusing to send data to ${url.protocol}//${url.hostname}: use https, or a server on localhost`);
+}
+
 async function postJson(url, headers, body) {
+  assertSafeUrl(url);
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'content-type': 'application/json', ...headers },
@@ -140,4 +159,4 @@ function listLlms() {
   return Object.entries(clients).map(([id, c]) => ({ id, ...c }));
 }
 
-module.exports = { registerLlm, getLlm, listLlms };
+module.exports = { registerLlm, getLlm, listLlms, assertSafeUrl };

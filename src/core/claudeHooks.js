@@ -117,10 +117,13 @@ function hooksInstalled(cwd) {
   return (readText(settingsPath(cwd)) || '').includes(HOOK_MARK);
 }
 
+const MAX_PAYLOAD_BYTES = 256 * 1024; // real hook payloads are a few hundred bytes
+
 /**
  * Handle one hook payload from the inbox. Claims the file by renaming it so the CLI
- * and the extension never process the same payload twice.
- * @returns {Promise<{file: string, warning?: string} | null>}
+ * and the extension never process the same payload twice. Payloads naming a transcript
+ * outside this project's Claude folder are ignored.
+ * @returns {Promise<{file: string, warning?: string} | {ignored: string} | null>}
  */
 async function processPayload(cwd, payloadFile, config, getApiKey) {
   const claimed = `${payloadFile}.working`;
@@ -130,13 +133,15 @@ async function processPayload(cwd, payloadFile, config, getApiKey) {
     return null; // someone else took it
   }
   try {
+    if (fs.statSync(claimed).size > MAX_PAYLOAD_BYTES) return { ignored: 'payload is too large' };
     const payload = readJson(claimed, {});
     if (payload.command === 'sync') {
       syncTargets(cwd, config);
       return { file: paths(cwd).handoff };
     }
     const transcript = payload.transcript_path;
-    if (!transcript || !fs.existsSync(transcript)) return null;
+    if (typeof transcript !== 'string' || !fs.existsSync(transcript)) return null;
+    if (!claude.isOwnTranscript(cwd, transcript)) return { ignored: "transcript is not in this project's Claude Code folder" };
     const ref = { provider: 'claude', id: payload.session_id || path.basename(transcript, '.jsonl'), path: transcript, updatedAt: mtime(transcript) };
     const detail = payload.trigger || payload.reason;
     const trigger = `claude:${payload.hook_event_name || 'hook'}${detail ? ':' + detail : ''}`;

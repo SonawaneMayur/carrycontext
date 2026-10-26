@@ -149,6 +149,8 @@ While VS Code is open, the extension checks every 30s for Codex and Gemini sessi
 |---|---|
 | `none` (default) | Free and offline. Pulls the goal, latest state, recent requests, files touched, commands run, and todos from the transcript. Keeps the decisions and gotchas from an earlier LLM-written handoff instead of discarding them |
 | `anthropic`, `openai`, `gemini` | API keys entered with **Set API Key** go into VS Code secret storage. Hooks run outside VS Code, so they read `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY` from your environment |
+
+The summarizer is chosen in your **user** settings (Select Summarizer saves it there); workspace settings for it are ignored on purpose, see [SECURITY.md](SECURITY.md). Without VS Code, set it in `~/Library/Application Support/carrycontext/config.json` (macOS) or `~/.config/carrycontext/config.json` (Linux), for example `{"summarizer": {"provider": "ollama", "model": "llama3.1"}}`.
 | `ollama` | Local model, no key |
 | `openai-compatible` | OpenRouter, Groq, Mistral, DeepSeek, LM Studio… Set `summarizer.baseUrl` and `OPENAI_COMPATIBLE_API_KEY` |
 
@@ -192,6 +194,7 @@ Leave out `listSessions`/`readSession` for a target-only provider (like Copilot 
 - **No personal paths:** handoffs use `./` and `~` instead of absolute paths, and `<user>` instead of your username.
 - **Local by default:** nothing leaves your machine unless you pick an LLM summarizer, and then only the redacted transcript goes to that provider.
 - **API keys** live in VS Code's secret storage (or your environment for the CLI), never in project files.
+- **Repos can't redirect your data:** the summarizer, its URL and redaction are user-only settings, so a cloned repo's `.vscode/settings.json` or `.carrycontext/config.json` can't send your conversation or API key elsewhere. Summaries go over https only (http only to localhost).
 
 Details, and how to report a vulnerability privately: [SECURITY.md](SECURITY.md).
 

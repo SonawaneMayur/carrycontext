@@ -2,7 +2,7 @@
 const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
-const { saveConfig } = require('./core/config');
+const { saveConfig, normalizeConfig } = require('./core/config');
 const { paths, loadState, lastProcessed, gatherSessions, updateHandoff, activateBranch, listSavedHandoffs, syncTargets, resumePrompt } = require('./core/handoff');
 const { currentBranch, headFile } = require('./core/git');
 const { installClaudeHooks, updateHookSettings, writeHookScript, hooksInstalled, processPayload, pendingPayloads } = require('./core/claudeHooks');
@@ -33,26 +33,43 @@ function activate(context) {
   const cwd = () => vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
   const config = () => {
     const c = vscode.workspace.getConfiguration('carrycontext');
-    return {
-      summarizer: {
-        provider: c.get('summarizer.provider', 'none'),
-        model: c.get('summarizer.model', ''),
-        baseUrl: c.get('summarizer.baseUrl', ''),
-      },
-      sources: c.get('sources', ['claude', 'codex', 'gemini']),
-      targets: c.get('targets', ['claude', 'codex', 'gemini']),
-      lookbackHours: c.get('lookbackHours', 24),
-      handoffLimit: c.get('handoffLimit', 50),
-      maxTranscriptChars: c.get('maxTranscriptChars', 150000),
-      autoUpdate: { enabled: c.get('autoUpdate.enabled', true), idleSeconds: c.get('autoUpdate.idleSeconds', 120) },
-      redact: { enabled: c.get('redact.enabled', true), extraPatterns: c.get('redact.extraPatterns', []) },
-      verify: { enabled: c.get('verify.enabled', true) },
+    // Settings that decide where data goes are machine-scoped in package.json, so VS Code
+    // already ignores them in workspace settings. Reading only the user value as well means a
+    // repo's .vscode/settings.json can never redirect summaries, whatever VS Code does.
+    const user = (key, fallback) => {
+      const v = c.inspect(key);
+      return v?.globalValue !== undefined ? v.globalValue : v?.defaultValue !== undefined ? v.defaultValue : fallback;
     };
+    return normalizeConfig({
+      summarizer: {
+        provider: user('summarizer.provider', 'none'),
+        model: user('summarizer.model', ''),
+        baseUrl: user('summarizer.baseUrl', ''),
+      },
+      sources: c.get('sources'),
+      targets: c.get('targets'),
+      lookbackHours: c.get('lookbackHours'),
+      handoffLimit: c.get('handoffLimit'),
+      maxTranscriptChars: user('maxTranscriptChars', 150000),
+      autoUpdate: { enabled: c.get('autoUpdate.enabled', true), idleSeconds: c.get('autoUpdate.idleSeconds') },
+      redact: { enabled: user('redact.enabled', true), extraPatterns: user('redact.extraPatterns', []) },
+      verify: { enabled: c.get('verify.enabled', true) },
+    });
+  };
+
+  /** User-only settings that this workspace tries to set (they are ignored). */
+  const workspaceOverrides = () => {
+    const c = vscode.workspace.getConfiguration('carrycontext');
+    return ['summarizer.provider', 'summarizer.model', 'summarizer.baseUrl', 'maxTranscriptChars', 'redact.enabled', 'redact.extraPatterns'].filter((key) => {
+      const v = c.inspect(key);
+      return v && (v.workspaceValue !== undefined || v.workspaceFolderValue !== undefined);
+    });
   };
   const tree = new HandoffTree(cwd, config);
   context.subscriptions.push(vscode.window.createTreeView('carrycontext.handoffs', { treeDataProvider: tree }));
 
-  // Hooks run the CLI outside VS Code, so it reads the same settings from .carrycontext/config.json.
+  // Hooks run the CLI outside VS Code: project settings go to .carrycontext/config.json and
+  // user-only ones to the per-user config file (see src/core/config.js).
   const persistConfig = () => cwd() && saveConfig(cwd(), config());
 
   async function run(label, fn) {
@@ -116,7 +133,8 @@ function activate(context) {
     if (!dir) return;
     for (const file of pendingPayloads(dir, minAgeMs)) {
       const res = await processPayload(dir, file, config(), getApiKey).catch((e) => output.appendLine(`[error] inbox: ${e.message}`));
-      if (res) output.appendLine(`${new Date().toISOString()} processed hook payload ${path.basename(file)}`);
+      if (res && 'ignored' in res) output.appendLine(`${new Date().toISOString()} ignored hook payload ${path.basename(file)}: ${res.ignored}`);
+      else if (res) output.appendLine(`${new Date().toISOString()} processed hook payload ${path.basename(file)}`);
     }
   }
 
@@ -282,14 +300,15 @@ function activate(context) {
       );
       if (!pick) return;
       const c = vscode.workspace.getConfiguration('carrycontext');
-      await c.update('summarizer.provider', pick.id, vscode.ConfigurationTarget.Workspace);
+      // User settings only: these decide where your data goes (see workspaceOverrides).
+      await c.update('summarizer.provider', pick.id, vscode.ConfigurationTarget.Global);
       if (pick.id === 'none') return;
       const llm = getLlm(pick.id);
       const model = await vscode.window.showInputBox({ prompt: `Model for ${llm.label}`, value: c.get('summarizer.model') || llm.defaultModel });
-      if (model !== undefined) await c.update('summarizer.model', model, vscode.ConfigurationTarget.Workspace);
+      if (model !== undefined) await c.update('summarizer.model', model, vscode.ConfigurationTarget.Global);
       if (pick.id === 'openai-compatible' || pick.id === 'ollama') {
         const baseUrl = await vscode.window.showInputBox({ prompt: 'Base URL', value: c.get('summarizer.baseUrl') || (pick.id === 'ollama' ? 'http://localhost:11434' : 'https://openrouter.ai/api/v1') });
-        if (baseUrl !== undefined) await c.update('summarizer.baseUrl', baseUrl, vscode.ConfigurationTarget.Workspace);
+        if (baseUrl !== undefined) await c.update('summarizer.baseUrl', baseUrl, vscode.ConfigurationTarget.Global);
       }
       if (llm.needsKey || pick.id === 'openai-compatible') await commands['carrycontext.setApiKey'](pick.id);
     },
@@ -322,6 +341,19 @@ function activate(context) {
   const dir = cwd();
   output.appendLine(`${new Date().toISOString()} CarryContext activated. Folder: ${dir || '(none open)'}`);
   context.subscriptions.push(vscode.workspace.onDidChangeWorkspaceFolders(refreshStatus));
+  const overridden = workspaceOverrides();
+  if (overridden.length) {
+    output.appendLine(`[security] ignored workspace settings: ${overridden.join(', ')}`);
+    if (!context.workspaceState.get('overridesWarned')) {
+      context.workspaceState.update('overridesWarned', true);
+      vscode.window
+        .showWarningMessage(
+          `CarryContext ignores ${overridden.map((k) => `"${k}"`).join(', ')} in this workspace's settings, so a project can't redirect your conversation data. Set them in your user settings instead.`,
+          'Select Summarizer',
+        )
+        .then((a) => a && commands['carrycontext.selectSummarizer']());
+    }
+  }
   if (dir) {
     persistConfig();
     // The extension path and Node path change on updates, so keep the hook script current.

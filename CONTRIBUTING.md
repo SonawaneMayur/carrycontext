@@ -51,6 +51,8 @@ Each extension point is a registry with a **contract test**: once you register s
 Rules that keep the project safe:
 
 - Everything written to disk or sent to an LLM goes through `sanitize()`.
+- A setting that decides where data goes, how much is sent, or whether it's redacted must be **user-only**: add it to `USER_ONLY` in `src/core/config.js` and give it `"scope": "machine"` in `package.json`. A test fails if the two disagree.
+- Never trust paths or URLs that come from a project's files (config, inbox payloads, handoffs): a cloned repo controls them.
 - Tests run in a sandbox (`test/helpers/env.js`) with a temporary `HOME`, so they never touch your real `~/.claude`, `~/.codex` or `~/.gemini`. Use it in new test files.
 - Test data is synthetic. Never commit real transcripts, handoffs or keys.
 - Don't add runtime dependencies; `npm run check` fails if `dependencies` is not empty.

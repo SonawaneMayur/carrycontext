@@ -310,7 +310,8 @@ function saveHandoff(cwd, doc, config, branch, fileName) {
   writeFile(bp.handoff, doc);
   writeFile(sessionFile, doc);
   const old = listFiles(bp.saved, (f) => f.endsWith('.md')).sort((a, b) => mtime(a) - mtime(b));
-  for (const f of old.slice(0, Math.max(0, old.length - config.handoffLimit))) fs.rmSync(f, { force: true });
+  const keep = Math.max(1, Number(config.handoffLimit) || 50); // never prune every saved handoff
+  for (const f of old.slice(0, Math.max(0, old.length - keep))) fs.rmSync(f, { force: true });
   ensureGitignore(cwd);
   if (!branch) syncTargets(cwd, config, doc);
   return sessionFile;

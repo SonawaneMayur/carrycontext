@@ -5,7 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
-const { loadConfig } = require('../src/core/config');
+const { loadConfig, ignoredProjectSettings, userConfigPath } = require('../src/core/config');
 const { paths, gatherSessions, updateHandoff, activateBranch, syncTargets, resumePrompt } = require('../src/core/handoff');
 const { processPayload } = require('../src/core/claudeHooks');
 const { readText } = require('../src/core/util');
@@ -33,6 +33,10 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   const cwd = path.resolve(String(args.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd()));
   const config = loadConfig(cwd);
+  const ignored = ignoredProjectSettings(cwd);
+  if (ignored.length) {
+    console.error(`carrycontext: ignored ${ignored.join(', ')} in .carrycontext/config.json; these can only be set in your user config (${userConfigPath()})`);
+  }
   const [cmd, sub] = args._;
 
   switch (cmd) {
@@ -57,7 +61,8 @@ async function main() {
         break;
       }
       const res = await processPayload(cwd, payload, config, getApiKey);
-      if (res) console.log(`${new Date().toISOString()} updated ${res.sessionFile || res.file}${res.warning ? ' (' + res.warning + ')' : ''}`);
+      if (res && 'ignored' in res) console.log(`${new Date().toISOString()} ignored payload: ${res.ignored}`);
+      else if (res) console.log(`${new Date().toISOString()} updated ${res.sessionFile || res.file}${res.warning ? ' (' + res.warning + ')' : ''}`);
       break;
     }
     case 'activate': {

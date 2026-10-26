@@ -16,6 +16,8 @@ function sandbox() {
   process.env.CLAUDE_CONFIG_DIR = path.join(home, '.claude');
   process.env.CODEX_HOME = path.join(home, '.codex');
   delete process.env.CLAUDE_PROJECT_DIR;
+  delete process.env.XDG_CONFIG_HOME; // the per-user config file must land in the sandbox
+  delete process.env.APPDATA;
 
   let n = 0;
   return {

@@ -4,6 +4,17 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Security
+
+- **A cloned repo could redirect summaries and the API key sent with them.** The summarizer provider, model and URL were read from workspace settings and from a project's `.carrycontext/config.json`, so a malicious repo could point them at its own server. They are now user-only: machine-scoped in VS Code, and read by the CLI and hooks from a per-user config file, never from the project. Redaction settings and the transcript size limit are user-only too. Only matters if you had set a summarizer API key; the default (`none`) sends nothing.
+- Summaries are only sent over https, or http to localhost (Ollama, LM Studio); URLs with credentials are refused before any request.
+- Hook payloads in `.carrycontext/inbox/` are only processed when their transcript is in Claude Code's folder for the same project (symlinks resolved), and oversized payloads are ignored, so a planted file can't make CarryContext read another project's conversation.
+- Numeric settings are kept in safe ranges; a handoff limit of 0 can no longer delete every saved handoff.
+
+### Changed
+
+- **Select Summarizer** saves to user settings. If you chose a summarizer before, choose it once more; CarryContext warns when a workspace tries to set these settings.
+
 ## [0.3.0] - 2026-10-25
 
 ### Added

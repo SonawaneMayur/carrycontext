@@ -138,6 +138,7 @@
       "properties": {
         "carrycontext.summarizer.provider": {
           "type": "string",
+          "scope": "machine",
           "default": "none",
           "enum": [
             "none",
@@ -155,17 +156,19 @@
             "Local Ollama server",
             "Any OpenAI-compatible endpoint (OpenRouter, Groq, Mistral, DeepSeek, LM Studio, ...)"
           ],
-          "description": "Which LLM writes the handoff summary."
+          "description": "Which LLM writes the handoff summary. User settings only: a workspace or repo cannot change it."
         },
         "carrycontext.summarizer.model": {
           "type": "string",
+          "scope": "machine",
           "default": "",
-          "description": "Model id for the summarizer. Leave empty for the provider default."
+          "description": "Model id for the summarizer. Leave empty for the provider default. User settings only: a workspace or repo cannot change it."
         },
         "carrycontext.summarizer.baseUrl": {
           "type": "string",
+          "scope": "machine",
           "default": "",
-          "description": "Override the API base URL (required for openai-compatible)."
+          "description": "Override the API base URL (required for openai-compatible). Must be https, or http on localhost. User settings only: a workspace or repo cannot change it."
         },
         "carrycontext.sources": {
           "type": "array",
@@ -213,16 +216,18 @@
         },
         "carrycontext.redact.enabled": {
           "type": "boolean",
+          "scope": "machine",
           "default": true,
-          "description": "Replace API keys, tokens, passwords and private keys with [REDACTED:…] in handoffs and in text sent to the summarizer LLM."
+          "description": "Replace API keys, tokens, passwords and private keys with [REDACTED:…] in handoffs and in text sent to the summarizer LLM. User settings only: a workspace or repo cannot change it."
         },
         "carrycontext.redact.extraPatterns": {
           "type": "array",
+          "scope": "machine",
           "items": {
             "type": "string"
           },
           "default": [],
-          "description": "Extra regular expressions to redact (for example your company's internal token format)."
+          "description": "Extra regular expressions to redact (for example your company's internal token format). User settings only: a workspace or repo cannot change it."
         },
         "carrycontext.verify.enabled": {
           "type": "boolean",
@@ -236,8 +241,9 @@
         },
         "carrycontext.maxTranscriptChars": {
           "type": "number",
+          "scope": "machine",
           "default": 150000,
-          "description": "Transcript characters sent to the summarizer LLM (head and tail are kept)."
+          "description": "Transcript characters sent to the summarizer LLM (head and tail are kept). User settings only: a workspace or repo cannot change it."
         }
       }
     },
