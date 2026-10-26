@@ -61,6 +61,24 @@ Rules that keep the project safe:
 - Update `CHANGELOG.md` under **Unreleased** for anything users will notice.
 - CI must pass: tests on Ubuntu and macOS with Node 22 and 24, the `.vsix` build, and CodeQL.
 
+## Releasing (maintainers)
+
+1. Set `"version"` in `package.json` (for example `0.3.0`).
+2. In `CHANGELOG.md`, move the **Unreleased** entries under `## [0.3.0] - <date>` and update the compare links at the bottom.
+3. Commit and push, and wait for CI to pass.
+4. Tag and push the tag:
+   ```sh
+   git tag -a v0.3.0 -m "CarryContext 0.3.0"
+   git push origin v0.3.0
+   ```
+   The Release workflow checks that the tag matches `package.json`, runs the tests, builds `carrycontext-0.3.0.vsix` and `SHA256SUMS.txt`, and publishes the GitHub Release.
+5. **Marketplace, by hand.** No publishing token is stored anywhere, on purpose:
+   - Download the `.vsix` and `SHA256SUMS.txt` from the release and check `shasum -a 256 -c SHA256SUMS.txt`.
+   - Go to https://marketplace.visualstudio.com/manage/publishers/sonawanemayur, open **CarryContext → … → Update**, and upload the `.vsix`.
+   - Wait for **Verifying** to change to **Published**, then check https://marketplace.visualstudio.com/items?itemName=sonawanemayur.carrycontext.
+
+If releases become frequent, automate step 5 with a short-lived token stored as an environment secret that needs a maintainer's approval, or with Microsoft Entra ID sign-in (no stored token). See SECURITY.md for the risks.
+
 ## Reporting bugs and security issues
 
 Bugs: open an issue with the template. Security problems: please follow [SECURITY.md](SECURITY.md) and report privately.
