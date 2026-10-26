@@ -4,11 +4,20 @@ const { sandbox } = require('./helpers/env');
 const { startMockLlm, MOCK_BASE_PATHS } = require('./helpers/mockLlm');
 
 const env = sandbox();
+const fs = require('fs');
+const path = require('path');
 const { listLlms, getLlm, registerLlm } = require('../src/llm');
 test.after(() => env.cleanup());
 
-// Contract: every registered summarizer client must work against the mock server.
-for (const llm of listLlms()) {
+// Clients that run on this machine (no HTTP) are tested in their own file instead.
+for (const llm of listLlms().filter((l) => l.local)) {
+  test(`contract: local client ${llm.id} has its own test file`, () => {
+    assert.ok(fs.existsSync(path.join(__dirname, `${llm.id}.test.js`)), `add test/${llm.id}.test.js`);
+  });
+}
+
+// Contract: every registered HTTP summarizer client must work against the mock server.
+for (const llm of listLlms().filter((l) => !l.local)) {
   test(`contract: ${llm.id} sends system + prompt and returns the reply`, async () => {
     assert.ok(llm.id in MOCK_BASE_PATHS, `add a base path for "${llm.id}" to test/helpers/mockLlm.js`);
     const mock = await startMockLlm({ reply: 'hello from mock' });

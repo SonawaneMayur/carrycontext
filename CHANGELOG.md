@@ -4,6 +4,12 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- **Apple on-device summarizer (opt-in):** Apple Intelligence's on-device model writes handoffs, for free, without anything leaving your Mac. A small helper is built from source on first use and always runs inside a macOS sandbox: no network, no file writes, no reads in your home folder, an empty environment. It refuses to run without the sandbox. Select Summarizer checks the model is ready before switching. Supports strict JSON answers for upcoming features.
+- `carrycontext doctor`: which summarizers are usable right now, plus git and hook status. Never prints key values.
+- Summarizer prompts fit small-context models: the transcript is condensed, the previous handoff shortened, and a too-long request is retried once, shrunk using the model's token count. Code fences around an answer are removed.
+
 ## [0.3.1] - 2026-10-25
 
 ### Security

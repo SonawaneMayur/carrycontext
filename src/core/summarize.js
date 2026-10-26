@@ -204,32 +204,61 @@ Rules:
  * LLM-written handoff sections.
  * @returns {Promise<Record<string, string>>}
  */
+// Sections of the previous handoff worth keeping when the model's context is small.
+// Key decisions are merged separately (mergeDecisions), so nothing is lost by leaving them out.
+const ESSENTIAL_SECTIONS = ['Goal', 'Open tasks', 'Next steps'];
+
+/**
+ * The summarizer prompt, fitted to `budget` characters. Small budgets keep the transcript's
+ * head and tail, an essentials-only previous handoff, and a shortened ground truth.
+ */
+function buildPrompt(messages, prevDoc, groundTruth, budget, small) {
+  const facts = extractFacts(messages);
+  const prev = small
+    ? Object.entries(parseSections(prevDoc))
+        .filter(([k]) => ESSENTIAL_SECTIONS.includes(k))
+        .map(([k, v]) => `## ${k}\n${v}`)
+        .join('\n\n')
+    : prevDoc;
+  const parts = [
+    prev ? `<previous_handoff>\n${small ? truncate(prev, budget * 0.2) : prev}\n</previous_handoff>` : '',
+    `<extracted_facts>\nEdited files: ${facts.edited.join(', ') || 'none'}\nCommands: ${facts.commands.slice(-20).join(' ; ') || 'none'}\nTodos: ${JSON.stringify(facts.todos || [])}\n</extracted_facts>`,
+    groundTruth
+      ? `<ground_truth>\nChecked against git and the session's recorded results right now. Prefer this over the transcript where they disagree, and never describe a contradicted claim as done.\n${small ? truncate(groundTruth, budget * 0.2) : groundTruth}\n</ground_truth>`
+      : '',
+  ].filter(Boolean);
+  const used = parts.reduce((n, p) => n + p.length, 0);
+  const transcriptBudget = Math.max(1000, budget - used - 200);
+  return [...parts, `<transcript>\n${condense(messages, transcriptBudget)}\n</transcript>`, 'Write the handoff now.'].join('\n\n');
+}
+
+/** Remove a code fence some models wrap their whole answer in. */
+const unfence = (text) => text.trim().replace(/^```[\w-]*\n/, '').replace(/\n```$/, '');
+
 async function llmSections(messages, prevDoc, { summarizer, maxTranscriptChars, redact }, apiKey, groundTruth = '', cwd = '') {
   const client = getLlm(summarizer.provider);
   if (!client) throw new Error(`Unknown summarizer provider "${summarizer.provider}"`);
   if (client.needsKey && !apiKey) throw new Error(`No API key for ${summarizer.provider} (set it via "CarryContext: Set API Key" or ${client.envKey})`);
-  const facts = extractFacts(messages);
-  const rawPrompt = [
-    prevDoc ? `<previous_handoff>\n${prevDoc}\n</previous_handoff>` : '',
-    `<extracted_facts>\nEdited files: ${facts.edited.join(', ') || 'none'}\nCommands: ${facts.commands.slice(-20).join(' ; ') || 'none'}\nTodos: ${JSON.stringify(facts.todos || [])}\n</extracted_facts>`,
-    groundTruth
-      ? `<ground_truth>\nChecked against git and the session's recorded results right now. Prefer this over the transcript where they disagree, and never describe a contradicted claim as done.\n${groundTruth}\n</ground_truth>`
-      : '',
-    `<transcript>\n${condense(messages, maxTranscriptChars)}\n</transcript>`,
-    'Write the handoff now.',
-  ]
-    .filter(Boolean)
-    .join('\n\n');
-  // Secrets and personal paths never leave the machine, even to the user's own LLM provider.
-  const prompt = sanitize(rawPrompt, { cwd, redact }).text;
-  const text = await client.complete({
-    model: summarizer.model || client.defaultModel,
-    baseUrl: summarizer.baseUrl,
-    apiKey,
-    system: SYSTEM_PROMPT,
-    prompt,
-  });
-  const sections = parseSections(text);
+  const small = Boolean(client.contextChars);
+  const ask = (budget) =>
+    client.complete({
+      model: summarizer.model || client.defaultModel,
+      baseUrl: summarizer.baseUrl,
+      apiKey,
+      system: SYSTEM_PROMPT,
+      // Secrets and personal paths never leave the process, even to the user's own model.
+      prompt: sanitize(buildPrompt(messages, prevDoc, groundTruth, budget, small), { cwd, redact }).text,
+    });
+  const budget = small ? Math.min(maxTranscriptChars, client.contextChars) : maxTranscriptChars;
+  let text;
+  try {
+    text = await ask(budget);
+  } catch (e) {
+    // The model reports exactly how far over it was: shrink to fit and try once more.
+    if (e.code !== 'context' || !e.tokens || !e.limit) throw e;
+    text = await ask(Math.floor((budget * e.limit * 0.8) / e.tokens));
+  }
+  const sections = parseSections(unfence(text));
   if (!Object.keys(sections).length) throw new Error('Summarizer returned no sections');
   return sections;
 }

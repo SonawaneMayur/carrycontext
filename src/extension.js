@@ -295,15 +295,33 @@ function activate(context) {
 
     'carrycontext.selectSummarizer': async () => {
       const pick = await vscode.window.showQuickPick(
-        [{ label: 'None (heuristic, offline)', id: 'none' }, ...listLlms().map((l) => ({ label: l.label, description: l.defaultModel, id: l.id }))],
+        [
+          { label: 'None (heuristic, offline)', id: 'none' },
+          ...listLlms().map((l) => ({ label: l.label, description: l.local ? 'runs on this Mac · free · private' : l.defaultModel, id: l.id })),
+        ],
         { placeHolder: 'Which LLM should write handoffs?' },
       );
       if (!pick) return;
       const c = vscode.workspace.getConfiguration('carrycontext');
+      const llm = getLlm(pick.id);
+      // A local model must be usable before switching to it; the first check builds its helper.
+      if (llm?.status) {
+        const s = await vscode.window.withProgress(
+          { location: vscode.ProgressLocation.Notification, title: `Checking ${llm.label}…` },
+          () => llm.status(),
+        );
+        if (!s.ready) {
+          if (s.detail) output.appendLine(`[apple] ${s.detail}`);
+          return vscode.window.showWarningMessage(`${llm.label} isn't available: ${s.reason}`);
+        }
+      }
       // User settings only: these decide where your data goes (see workspaceOverrides).
       await c.update('summarizer.provider', pick.id, vscode.ConfigurationTarget.Global);
       if (pick.id === 'none') return;
-      const llm = getLlm(pick.id);
+      if (llm.local) {
+        await c.update('summarizer.model', '', vscode.ConfigurationTarget.Global);
+        return vscode.window.showInformationMessage(`Handoffs will be written by ${llm.label}. Nothing leaves your Mac.`);
+      }
       const model = await vscode.window.showInputBox({ prompt: `Model for ${llm.label}`, value: c.get('summarizer.model') || llm.defaultModel });
       if (model !== undefined) await c.update('summarizer.model', model, vscode.ConfigurationTarget.Global);
       if (pick.id === 'openai-compatible' || pick.id === 'ollama') {

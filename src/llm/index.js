@@ -16,6 +16,9 @@
  * @property {string} defaultModel
  * @property {string} [envKey]      env var holding the API key (used by the CLI/hooks)
  * @property {boolean} [needsKey]
+ * @property {boolean} [local]        runs on this machine (no network); tested in its own test file
+ * @property {number} [contextChars]  prompt budget for small models; prompts are condensed to fit
+ * @property {() => Promise<{ready: boolean, code?: string, reason?: string}>} [status]  usable right now?
  * @property {(args: CompleteArgs) => Promise<string>} complete
  */
 
@@ -135,6 +138,7 @@ const clients = {
       return data.message?.content || '';
     },
   },
+  apple: require('./apple'),
   'openai-compatible': {
     label: 'OpenAI-compatible (OpenRouter, Groq, Mistral, LM Studio, ...)',
     defaultModel: '',

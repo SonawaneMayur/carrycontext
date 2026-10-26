@@ -43,7 +43,7 @@ Each extension point is a registry with a **contract test**: once you register s
 | To add | Register in | Then add to the tests |
 |---|---|---|
 | An assistant (session reader and/or handoff target) | `src/providers/index.js` (`registerProvider`) | A writer in `SESSION_WRITERS` (`test/helpers/sessions.js`) that saves a session in that assistant's format |
-| A summarizer LLM | `src/llm/index.js` (`registerLlm`) | Its base path in `MOCK_BASE_PATHS` (`test/helpers/mockLlm.js`), and a response shape in `respond()` if the API is new |
+| A summarizer LLM | `src/llm/index.js` (`registerLlm`) | Its base path in `MOCK_BASE_PATHS` (`test/helpers/mockLlm.js`), and a response shape in `respond()` if the API is new. A client that runs on this machine instead of over HTTP sets `local: true` and gets its own `test/<id>.test.js` (the contract test checks it exists) |
 | A secret format | `src/security/secrets.js` (`registerSecretPattern` or the built-in list) | A fake example in `FAKE_SECRETS` (`test/helpers/fakeSecrets.js`), built at runtime so it never looks like a real key in the repo |
 | A verification check | `src/core/claims.js` (`registerClaimChecker`: `extract` claims from the session's steps, `verify` each one) | Cases in `test/claims.test.js` for verified, unverified and contradicted |
 | A cleaning step for output | `src/core/sanitize.js` (`registerSanitizer`) | A case in `test/secrets.test.js` or `test/security.test.js` |
@@ -56,6 +56,10 @@ Rules that keep the project safe:
 - Tests run in a sandbox (`test/helpers/env.js`) with a temporary `HOME`, so they never touch your real `~/.claude`, `~/.codex` or `~/.gemini`. Use it in new test files.
 - Test data is synthetic. Never commit real transcripts, handoffs or keys.
 - Don't add runtime dependencies; `npm run check` fails if `dependencies` is not empty.
+
+## The Apple on-device helper
+
+`src/llm/apple/CarryContextApple.swift` is compiled on the user's Mac by `src/llm/apple.js` and always run inside the sandbox profile defined there. Keep it free of file and network access; the sandbox blocks both anyway, and the tests check it. Its tests use `test/fixtures/fake-apple-helper.py`, a stand-in that speaks the same protocol and probes the sandbox. It is copied to a temp folder first, because the sandbox blocks reads in the home folder, where your checkout lives. The real-model test only runs on a Mac with Apple Intelligence turned on, never in CI.
 
 ## Pull requests
 

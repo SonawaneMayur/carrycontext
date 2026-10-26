@@ -152,9 +152,18 @@ While VS Code is open, the extension checks every 30s for Codex and Gemini sessi
 
 The summarizer is chosen in your **user** settings (Select Summarizer saves it there); workspace settings for it are ignored on purpose, see [SECURITY.md](SECURITY.md). Without VS Code, set it in `~/Library/Application Support/carrycontext/config.json` (macOS) or `~/.config/carrycontext/config.json` (Linux), for example `{"summarizer": {"provider": "ollama", "model": "llama3.1"}}`.
 | `ollama` | Local model, no key |
+| `apple` | **Apple's on-device model (Apple Intelligence).** Free and private: it runs on your Mac inside a macOS sandbox with no network, no file writes and no access to your home folder. Needs an Apple-silicon Mac with macOS 26, Apple Intelligence turned on, and the Xcode Command Line Tools for a one-time 5-second build. Small context (4,096 tokens), so it's best for short sessions; long ones are condensed |
 | `openai-compatible` | OpenRouter, Groq, Mistral, DeepSeek, LM Studio… Set `summarizer.baseUrl` and `OPENAI_COMPATIBLE_API_KEY` |
 
 LLM summaries update the previous handoff rather than rewriting it from scratch. If the LLM call fails, the heuristic summary is used and the failure is noted in the handoff.
+
+### Apple on-device model
+
+Choose **Apple on-device** in **Select Summarizer**. CarryContext first checks that the model is ready: the first check builds a small helper from the Swift source shipped with the extension (about 5 seconds, once per version). If something's missing, it tells you the fix, such as turning on Apple Intelligence or running `xcode-select --install`, and keeps your current summarizer.
+
+The helper runs inside a macOS sandbox with no network, no file writes and no reads in your home folder, and with an empty environment, so API keys in your shell never reach it. If the sandbox can't be applied, CarryContext refuses to run it. Prompts are redacted first and passed through stdin, not the command line. Details: [SECURITY.md](SECURITY.md).
+
+`carrycontext doctor` shows whether the model, and every other summarizer, is usable right now.
 
 ## CLI
 
@@ -163,6 +172,7 @@ node bin/carrycontext.js compact-all --cwd /path/to/project
 node bin/carrycontext.js sync          # copy .carrycontext/handoff.md to all targets
 node bin/carrycontext.js show
 node bin/carrycontext.js activate     # make the checked-out branch's handoff active
+node bin/carrycontext.js doctor       # which summarizers are usable; never prints key values
 node bin/carrycontext.js prompt codex  # print a resume prompt for codex
 ```
 

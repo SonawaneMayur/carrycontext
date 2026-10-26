@@ -146,6 +146,7 @@
             "openai",
             "gemini",
             "ollama",
+            "apple",
             "openai-compatible"
           ],
           "enumDescriptions": [
@@ -154,6 +155,7 @@
             "OpenAI API",
             "Google Gemini API",
             "Local Ollama server",
+            "Apple's on-device model (Apple Intelligence): free, private, nothing leaves your Mac. Apple-silicon Mac, macOS 26, Command Line Tools. Small context, best for short sessions",
             "Any OpenAI-compatible endpoint (OpenRouter, Groq, Mistral, DeepSeek, LM Studio, ...)"
           ],
           "description": "Which LLM writes the handoff summary. User settings only: a workspace or repo cannot change it."

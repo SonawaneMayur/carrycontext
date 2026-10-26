@@ -9,7 +9,9 @@ const { loadConfig, ignoredProjectSettings, userConfigPath } = require('../src/c
 const { paths, gatherSessions, updateHandoff, activateBranch, syncTargets, resumePrompt } = require('../src/core/handoff');
 const { processPayload } = require('../src/core/claudeHooks');
 const { readText } = require('../src/core/util');
-const { getLlm } = require('../src/llm');
+const { getLlm, listLlms } = require('../src/llm');
+const { gitAvailable } = require('../src/core/git');
+const { hooksInstalled } = require('../src/core/claudeHooks');
 
 function parseArgs(argv) {
   const args = { _: [] };
@@ -76,6 +78,27 @@ async function main() {
     case 'show':
       console.log(readText(paths(cwd).handoff) || 'No handoff yet. Run: carrycontext compact-all');
       break;
+    case 'doctor': {
+      // Reports what is usable. Never prints key values, only whether one was found.
+      const user = userConfigPath();
+      console.log(`CarryContext doctor: ${path.basename(cwd)}`);
+      console.log(`  Node ${process.version} · git ${gitAvailable() ? 'available' : 'not available'} · Claude Code hooks ${hooksInstalled(cwd) ? 'installed' : 'not installed'}`);
+      console.log(`  User config: ${fs.existsSync(user) ? user : `${user} (not created yet)`}`);
+      console.log(`  Summarizer in use: ${config.summarizer.provider}${config.summarizer.provider === 'none' ? ' (built-in, nothing is sent anywhere)' : ''}`);
+      for (const llm of listLlms()) {
+        let state;
+        if (llm.status) {
+          const s = await llm.status();
+          state = s.ready ? `ready${s.contextSize ? `, ${s.contextSize}-token context` : ''}` : `unavailable: ${s.reason}${s.detail ? ` (${s.detail})` : ''}`;
+        } else if (llm.envKey) {
+          state = process.env[llm.envKey] ? `key found in ${llm.envKey}` : `no key in ${llm.envKey}${llm.needsKey ? '' : ' (optional)'}`;
+        } else {
+          state = 'no key needed';
+        }
+        console.log(`    ${llm.id.padEnd(18)} ${state}`);
+      }
+      break;
+    }
     case 'prompt':
       console.log(resumePrompt(cwd, sub || 'claude'));
       break;
@@ -85,6 +108,7 @@ async function main() {
   compact-all          build handoff.md from the newest session of each source provider
   sync                 copy .carrycontext/handoff.md to every target provider
   activate             make the checked-out git branch's handoff the active one
+  doctor               check git, hooks and which summarizers are usable
   show                 print the current handoff
   prompt <provider>    print a prompt that tells <provider> to resume from the handoff
   hook claude          used by Claude Code hooks (reads --payload FILE)`);
