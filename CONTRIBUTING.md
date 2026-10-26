@@ -59,7 +59,7 @@ Rules that keep the project safe:
 
 ## The Apple on-device helper
 
-`src/llm/apple/CarryContextApple.swift` is compiled on the user's Mac by `src/llm/apple.js` and always run inside the sandbox profile defined there. Keep it free of file and network access; the sandbox blocks both anyway, and the tests check it. Its tests use `test/fixtures/fake-apple-helper.py`, a stand-in that speaks the same protocol and probes the sandbox. It is copied to a temp folder first, because the sandbox blocks reads in the home folder, where your checkout lives. The real-model test only runs on a Mac with Apple Intelligence turned on, never in CI.
+`src/llm/apple/CarryContextApple.swift` is compiled on the user's Mac by `src/llm/apple.js` and always run inside the sandbox profile defined there. Keep it free of file and network access; the sandbox blocks both anyway, and the tests check it. Its tests use `test/fixtures/fake-apple-helper.sh`, a plain `/bin/sh` stand-in that speaks the same protocol and probes the sandbox. It is copied to `/tmp` first, because the sandbox blocks reads in the home folder, where your checkout lives. The real-model test only runs on a Mac with Apple Intelligence turned on, never in CI.
 
 ## Pull requests
 

@@ -40,7 +40,7 @@ jobs:
       - name: Show failing tests as annotations
         if: failure()
         shell: bash
-        run: grep -E "^✖|AssertionError|Error:|actual:|expected:" test-output.txt | head -25 | sed 's/^/::error::/' || true
+        run: grep -E "not ok|✖|AssertionError|Error:|actual:|expected:" test-output.txt | head -25 | sed 's/^ *//; s/^/::error::/' || true
 
   package:
     name: Build .vsix
