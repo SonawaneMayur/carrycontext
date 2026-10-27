@@ -2,7 +2,7 @@
   "name": "carrycontext",
   "displayName": "CarryContext: AI Session Handoffs",
   "description": "Never lose AI coding context. Automatic, verified, per-branch handoffs between Claude Code, Codex, Gemini CLI, Copilot and Cursor. Private by design.",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "preview": true,
   "publisher": "sonawanemayur",
   "author": {

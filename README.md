@@ -256,7 +256,7 @@ If you use CarryContext in research, a write-up, or a derived project, please cr
   author  = {Sonawane, Mayur},
   title   = {CarryContext: AI Session Handoffs},
   year    = {2026},
-  version = {0.4.1},
+  version = {0.4.2},
   url     = {https://github.com/SonawaneMayur/carrycontext},
   license = {MIT}
 }
