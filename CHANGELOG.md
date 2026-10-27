@@ -4,6 +4,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-10-27
+
 ### Changed
 
 - Marketplace listing: title **CarryContext: AI Session Handoffs**, a clearer description, more search keywords, a **Free** label, and a Q&A link to GitHub issues.
@@ -73,7 +75,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.2.1...v0.3.0
