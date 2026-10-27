@@ -1,7 +1,7 @@
 {
   "name": "carrycontext",
-  "displayName": "CarryContext",
-  "description": "Compact AI coding sessions into a portable handoff.md and resume in any LLM provider (Claude Code, Codex, Gemini, Copilot, Cursor, ...).",
+  "displayName": "CarryContext: AI Session Handoffs",
+  "description": "Never lose AI coding context. Automatic, verified, per-branch handoffs between Claude Code, Codex, Gemini CLI, Copilot and Cursor. Private by design.",
   "version": "0.4.0",
   "preview": true,
   "publisher": "sonawanemayur",
@@ -23,6 +23,7 @@
   "bugs": {
     "url": "https://github.com/SonawaneMayur/carrycontext/issues"
   },
+  "qna": "https://github.com/SonawaneMayur/carrycontext/issues",
   "engines": {
     "vscode": "^1.85.0",
     "node": ">=22"
@@ -43,8 +44,17 @@
     "context",
     "compact",
     "llm",
-    "agents"
+    "agents",
+    "apple intelligence",
+    "on-device",
+    "session",
+    "memory",
+    "git",
+    "branch",
+    "agents.md",
+    "context window"
   ],
+  "pricing": "Free",
   "main": "./src/extension.js",
   "bin": {
     "carrycontext": "./bin/carrycontext.js"

@@ -4,6 +4,11 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Changed
+
+- Marketplace listing: title **CarryContext: AI Session Handoffs**, a clearer description, more search keywords, a **Free** label, and a Q&A link to GitHub issues.
+- The **Changelog** tab on the Marketplace now shows these release notes (`CHANGELOG.md` is included in the package).
+
 ## [0.4.0] - 2026-10-25
 
 ### Added

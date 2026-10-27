@@ -1,4 +1,4 @@
-<img src="media/icon.png" alt="CarryContext icon" width="96" align="right">
+<img src="https://raw.githubusercontent.com/SonawaneMayur/carrycontext/main/media/icon.png" alt="CarryContext icon" width="96" align="right">
 
 # CarryContext
 

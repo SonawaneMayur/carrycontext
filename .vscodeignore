@@ -4,6 +4,5 @@ test/**
 .github/**
 .editorconfig
 CONTRIBUTING.md
-CHANGELOG.md
 scripts/**
 .gitignore
