@@ -254,9 +254,9 @@ If you use CarryContext in research, a write-up, or a derived project, please cr
 ```bibtex
 @software{sonawane_carrycontext_2026,
   author  = {Sonawane, Mayur},
-  title   = {CarryContext: portable AI coding session handoffs across LLM providers},
+  title   = {CarryContext: AI Session Handoffs},
   year    = {2026},
-  version = {0.1.0},
+  version = {0.4.1},
   url     = {https://github.com/SonawaneMayur/carrycontext},
   license = {MIT}
 }

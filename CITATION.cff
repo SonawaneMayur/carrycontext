@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use CarryContext in your work, please cite it as below."
-title: "CarryContext: portable AI coding session handoffs across LLM providers"
+title: "CarryContext: AI Session Handoffs"
 type: software
 authors:
   - given-names: Mayur
@@ -8,8 +8,8 @@ authors:
 repository-code: "https://github.com/SonawaneMayur/carrycontext"
 url: "https://github.com/SonawaneMayur/carrycontext"
 license: MIT
-version: 0.1.0
-date-released: 2026-10-20
+version: 0.4.1
+date-released: 2026-10-27
 keywords:
   - vscode-extension
   - llm

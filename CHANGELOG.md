@@ -4,6 +4,10 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Fixed
+
+- The citation (README and `CITATION.cff`) named version 0.1.0 and the first release date. It now names the current release and the title **CarryContext: AI Session Handoffs**, and the build checks that it stays current.
+
 ## [0.4.1] - 2026-10-27
 
 ### Changed
