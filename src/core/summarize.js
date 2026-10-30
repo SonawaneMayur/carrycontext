@@ -105,7 +105,7 @@ function heuristicSections(messages, prev) {
   const inProgress = openTodos.find((t) => t.status === 'in_progress');
 
   return {
-    'Short description': shortText(users[users.length - 1]?.text || '', 8),
+    'Short description': shortText(latestRequest(users), 8),
     Goal: prev.Goal || truncate(users[0]?.text.trim() || '_Unknown_', 1500),
     'Current state': lastAssistant
       ? `Last assistant update (${lastAssistant.provider}${lastAssistant.ts ? ', ' + lastAssistant.ts : ''}):\n\n${quote(truncate(lastAssistant.text.trim(), 2500))}`
@@ -186,6 +186,16 @@ const shortText = (text, words) =>
     .split(/\s+/)
     .slice(0, words)
     .join(' ');
+
+// Replies that say nothing about the work: "sure", "ok send it", "yes go ahead", "thanks".
+const REPLY =
+  /^(?:(?:yes|yeah|yep|yup|no|nope|ok|okay|sure|right|correct|agreed|fine|alright|got it|thanks|thank you|thx|please|pls|go ahead|go on|go for it|do it|do that|sounds good|looks good|lgtm|great|perfect|cool|nice|awesome|done|send|sent|continue|proceed)\b[\s,.!]*)+/i;
+
+/** Whether a request says what the work is, so it can name a handoff: "Add tests" does, "sure, send it" doesn't. */
+const isSubstantive = (text) => !text.trim().startsWith('<') && shortText(text.trim().replace(REPLY, ''), 2).split(' ').filter(Boolean).length >= 2;
+
+/** The newest request that says what the work is, or '' (the goal then names the handoff). */
+const latestRequest = (users) => [...users].reverse().find((m) => isSubstantive(m.text))?.text || '';
 
 const quote = (text) => text.split('\n').map((l) => `> ${l}`).join('\n');
 
@@ -273,6 +283,7 @@ module.exports = {
   heuristicSections,
   llmSections,
   shortText,
+  isSubstantive,
   mergeDecisions,
   constraintStatements,
 };

@@ -49,7 +49,7 @@
  * @typedef {Object} ProviderAdapter
  * @property {string} id
  * @property {string} label
- * @property {(cwd: string) => Promise<SessionRef[]>} [listSessions]  newest first; omit for target-only providers
+ * @property {(cwd: string, opts?: {limit?: number}) => Promise<SessionRef[]>} [listSessions]  newest first, at most `limit`; omit for target-only providers
  * @property {(ref: SessionRef) => Promise<Message[]>} [readSession]
  * @property {HandoffTarget} [target]
  * @property {{terminal?: (prompt: string, quote: (s: string) => string) => string, vscodeCommand?: string}} [launch]

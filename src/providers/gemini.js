@@ -13,14 +13,15 @@ module.exports = {
   id: 'gemini',
   label: 'Gemini CLI',
 
-  async listSessions(cwd) {
+  async listSessions(cwd, { limit = Infinity } = {}) {
     const dir = projectTmp(cwd);
     const chats = listFiles(path.join(dir, 'chats'), (f) => f.endsWith('.json'));
     // Older CLI versions only write logs.json (user prompts only).
     const files = chats.length ? chats : listFiles(dir, (f) => f === 'logs.json');
     return files
       .map((file) => ({ provider: 'gemini', id: path.basename(file, '.json'), path: file, updatedAt: mtime(file) }))
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, limit);
   },
 
   async readSession(ref) {

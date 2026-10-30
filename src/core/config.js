@@ -10,7 +10,7 @@ const { readJson, writeFile } = require('./util');
  * @property {string[]} sources   providers whose transcripts are read
  * @property {string[]} targets   providers that receive a copy of handoff.md
  * @property {number} lookbackHours
- * @property {number} handoffLimit   named handoff files kept in .carrycontext/handoffs
+ * @property {number} handoffLimit   versions of each session's handoff kept in .carrycontext/handoffs
  * @property {number} maxTranscriptChars
  * @property {{enabled: boolean, idleSeconds: number}} autoUpdate
  * @property {{enabled: boolean, extraPatterns: string[]}} redact   secret redaction (see src/security/secrets.js)

@@ -50,6 +50,18 @@ test('heuristicSections uses the first request as goal and the last reply as sta
   assert.equal(sec['Short description'], 'Add tests');
 });
 
+test('the short description skips replies that say nothing about the work', () => {
+  const sec = s.heuristicSections([user('Build the export feature'), assistant('Started'), user('sure, send it'), user('thanks!')], {});
+  assert.equal(sec['Short description'], 'Build the export feature');
+  assert.equal(s.heuristicSections([user('ok'), user('yes go ahead')], {})['Short description'], '', 'the goal names it instead');
+  for (const reply of ['send', 'Sure.', 'ok send it', 'yes do it', 'thank you', 'LGTM', '<task-notification>x</task-notification>']) {
+    assert.equal(s.isSubstantive(reply), false, reply);
+  }
+  for (const request of ['Add tests', 'okay draft emails for the remaining test cases', 'no, use pnpm instead', 'Notice the bug in login']) {
+    assert.equal(s.isSubstantive(request), true, request);
+  }
+});
+
 test('heuristicSections keeps richer sections from the previous handoff', () => {
   const sec = s.heuristicSections([user('more work'), assistant('ok')], { Goal: 'Original goal', Gotchas: 'Watch out' });
   assert.equal(sec.Goal, 'Original goal');

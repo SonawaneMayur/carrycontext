@@ -34,9 +34,21 @@ To package it: `npx @vscode/vsce package`, then install the `.vsix` file.
 | **Switch To Provider…** | Optionally refreshes the handoff, writes it where the chosen provider looks, then opens that tool with a "resume from handoff" prompt |
 | **Install Claude Code Hooks** | Refreshes the handoff on compact and session end, and loads it into new sessions |
 | **Select Summarizer LLM… / Set API Key…** | Choose which LLM writes the handoff (or none) |
-| **Open handoff.md / Copy Resume Prompt** | |
+| **Find Handoff…** | Search saved handoffs by title, branch, description or any text inside them (also the 🔍 at the top of the panel) |
+| **Copy Resume Prompt** | Copies a prompt that tells any assistant to read the handoff and continue |
 
 The status bar shows how long ago the handoff was updated. Click it to switch provider.
+
+## The panel
+
+The CarryContext icon in the Activity Bar opens a panel:
+
+- **Latest handoff:** what every assistant reads now, with its ✅/⚠️/❌ verification counts.
+- **One folder per branch,** the checked-out one first and open. Inside it, **one row per session**: its title, what it was working on, and when. Hover for the goal, next steps and verification; click to open it. Earlier versions are inside the row.
+- **Older branches:** branches with no handoff for 2 weeks, folded away.
+- **Recent conversations:** each assistant's newest sessions; click one to create a handoff from it.
+
+At the top: **Find Handoff** (🔍), **Compact All**, **Switch To Provider**, a filter that shows only the current branch, and refresh.
 
 ## Where the handoff goes
 
@@ -44,7 +56,7 @@ The status bar shows how long ago the handoff was updated. Click it to switch pr
 |---|---|
 | `.carrycontext/handoff.md` | Handoff for the checked-out branch; the provider copies below are made from it |
 | `.carrycontext/branches/<branch>/handoff.md` | Each git branch's own handoff (see [Branch-aware handoffs](#branch-aware-handoffs)) |
-| `.carrycontext/handoffs/<branch>/<provider>-<session-name>--<short-description>.md` | A named copy of every handoff, kept up to `carrycontext.handoffLimit` (default 50) per branch |
+| `.carrycontext/handoffs/<branch>/<provider>-<session-name>--<short-description>.md` | A named copy of every handoff. Each session keeps its newest `carrycontext.handoffLimit` (default 50) |
 | `.claude/handoff.md` | Claude Code, injected at session start by the SessionStart hook |
 | `.codex/handoff.md` + block in `AGENTS.md` | Codex CLI |
 | `.gemini/handoff.md` + block in `GEMINI.md` | Gemini CLI |
@@ -60,8 +72,9 @@ Named copy examples:
 ```
 
 - **Session name:** the session's title in Claude Code (your `/rename` title, otherwise Claude Code's generated one), otherwise the session's first prompt. When Compact All merges several sessions, it is `compact-all`.
-- **Short description:** at most 8 words on what was being worked on. An LLM summarizer writes it; the built-in summary uses the most recent request.
-- **Overwriting:** another handoff with the same session and description replaces that file; a new description creates a new file. **Open Handoff…** lists every file, newest first.
+- **Short description:** at most 8 words on what was being worked on. An LLM summarizer writes it; the built-in summary uses the most recent request that says what the work is, skipping replies like "sure" or "send it".
+- **Versions:** another handoff with the same session and description replaces that file; a new description creates a new file. The panel shows each session once, with its earlier files inside, and **Find Handoff…** searches them all.
+- **Index:** `.carrycontext/handoffs/index.json` caches each file's title, branch and date for the panel and search. It's checked against the files on every read and rebuilt if it's deleted.
 
 `carrycontext.targets` decides which of the provider copies are written. Instruction files only get a block between `<!-- carrycontext:start -->` and `<!-- carrycontext:end -->` markers; nothing else in them is changed.
 
@@ -72,9 +85,9 @@ In a git repo, every branch keeps its own handoff, so switching branches never l
 - **Switching:** when you `git checkout` a branch, CarryContext makes that branch's handoff the active one and copies it to every assistant. In VS Code this happens within about 2 seconds; for Claude Code it also happens when a session starts, even with VS Code closed.
 - **New branches:** a branch with no handoff yet starts with a **Background** section carrying over the previous branch's goal, decisions and gotchas. It's kept until the branch's own work replaces it.
 - **Sessions that span a switch:** Claude Code records the branch on every message, so if you switch branches partway through a session, each part goes into the right branch's handoff. Codex sessions use the branch in their metadata; anything else goes to the checked-out branch.
-- **Where you see it:** the status bar shows the branch (`Handoff · feature/payments · 5m ago`), and the sidebar groups saved handoffs by branch with the current one first.
+- **Where you see it:** the status bar shows the branch (`Handoff · feature/payments · 5m ago`), and [the panel](#the-panel) groups saved handoffs by branch with the current one first.
 
-Branch folders replace `/` with `__`, so `feature/payments` is stored as `branches/feature__payments/`. Worktrees and detached HEADs (`detached-<sha>`) are supported. Outside git, everything works as a single handoff, as before.
+Branch folders replace `/` with `__`, so `feature/payments` is stored as `branches/feature__payments/`. Worktrees and detached HEADs (`detached-<sha>`) are supported. Messages Claude Code records with no branch (`HEAD`, for example mid-rebase) stay with the branch the session was on. Outside git, everything works as a single handoff, as before.
 
 Not handled yet: merging a branch doesn't merge its handoff into the target branch's.
 
@@ -184,7 +197,7 @@ node bin/carrycontext.js prompt codex  # print a resume prompt for codex
 registerProvider({
   id: 'aider',
   label: 'Aider',
-  listSessions: async (cwd) => [/* { provider, id, path, updatedAt } newest first */],
+  listSessions: async (cwd, { limit = Infinity } = {}) => [/* { provider, id, path, updatedAt } newest first, at most limit */],
   readSession: async (ref) => [/* { role, text, tools, ts, provider } */],
   target: {
     handoffFile: (cwd) => path.join(cwd, '.aider', 'handoff.md'),
@@ -225,7 +238,9 @@ The tests run in a sandbox with a temporary `HOME`, so they never touch your rea
 ```
 bin/carrycontext.js        CLI, also the entry point for Claude Code hooks
 src/extension.js           VS Code commands, status bar, idle polling
+src/sidebar.js             the panel
 src/core/handoff.js        gather sessions → summarize → write per branch and mirror (no vscode import)
+src/core/catalog.js        saved handoffs by branch and session, the index cache, search
 src/core/git.js            current branch from .git/HEAD; Repository state section from git
 src/core/summarize.js      heuristic + LLM summaries, transcript condensing
 src/core/claudeHooks.js    hook script, settings.local.json merge, /compact-all, inbox
@@ -233,14 +248,14 @@ src/providers/*.js         transcript readers and handoff targets per assistant
 src/llm/index.js           Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible clients
 src/core/sanitize.js       cleaning pipeline for everything written or sent (secrets, paths)
 src/security/secrets.js    secret patterns (registry)
-test/                      node:test suites; test/helpers/ has the sandbox, session writers, mock LLM
+test/                      node:test suites; test/helpers/ has the sandbox, session writers, mock LLM, VS Code stand-in
 .github/                   CI, CodeQL, Dependabot, issue and PR templates
 ```
 
 ## Caveats
 
 - Codex and Gemini transcript formats aren't documented and change between versions. Their readers are best-effort and tested against synthetic sessions in their known formats. Claude Code's reader was also tested against real transcripts.
-- The VS Code UI (`src/extension.js`, `src/sidebar.js`) isn't covered by automated tests yet; everything it calls is.
+- The panel (`src/sidebar.js`) is tested against a stand-in for the VS Code API. The rest of the VS Code glue (`src/extension.js`) isn't covered by automated tests yet; everything it calls is.
 - `.carrycontext/.gitignore` excludes `handoff.md`, `handoffs/`, the inbox, state and logs. The provider copies (`.claude/handoff.md`, `.codex/handoff.md`, ...) are outside that folder and not ignored. Handoffs can contain anything from your conversations, so check them before committing.
 
 ## Author

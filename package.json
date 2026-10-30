@@ -89,8 +89,9 @@
       },
       {
         "command": "carrycontext.openHandoff",
-        "title": "Open Handoff…",
-        "category": "CarryContext"
+        "title": "Find Handoff…",
+        "category": "CarryContext",
+        "icon": "$(search)"
       },
       {
         "command": "carrycontext.copyResumePrompt",
@@ -123,6 +124,18 @@
         "title": "Refresh",
         "category": "CarryContext",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "carrycontext.showCurrentBranchOnly",
+        "title": "Show Current Branch Only",
+        "category": "CarryContext",
+        "icon": "$(filter)"
+      },
+      {
+        "command": "carrycontext.showAllBranches",
+        "title": "Show All Branches",
+        "category": "CarryContext",
+        "icon": "$(filter-filled)"
       },
       {
         "command": "carrycontext.compactThisSession",
@@ -224,7 +237,7 @@
         "carrycontext.handoffLimit": {
           "type": "number",
           "default": 50,
-          "description": "How many named handoff files to keep in .carrycontext/handoffs (oldest are deleted first)."
+          "description": "How many versions of each session's handoff to keep in .carrycontext/handoffs (oldest are deleted first). Every session always keeps its latest handoff."
         },
         "carrycontext.redact.enabled": {
           "type": "boolean",
@@ -285,6 +298,11 @@
     "menus": {
       "view/title": [
         {
+          "command": "carrycontext.openHandoff",
+          "when": "view == carrycontext.handoffs",
+          "group": "navigation@0"
+        },
+        {
           "command": "carrycontext.compactAll",
           "when": "view == carrycontext.handoffs",
           "group": "navigation@1"
@@ -295,9 +313,19 @@
           "group": "navigation@2"
         },
         {
+          "command": "carrycontext.showCurrentBranchOnly",
+          "when": "view == carrycontext.handoffs && !carrycontext.currentBranchOnly",
+          "group": "navigation@3"
+        },
+        {
+          "command": "carrycontext.showAllBranches",
+          "when": "view == carrycontext.handoffs && carrycontext.currentBranchOnly",
+          "group": "navigation@3"
+        },
+        {
           "command": "carrycontext.refreshView",
           "when": "view == carrycontext.handoffs",
-          "group": "navigation@3"
+          "group": "navigation@4"
         },
         {
           "command": "carrycontext.selectSummarizer",
@@ -349,6 +377,14 @@
         {
           "command": "carrycontext.refreshView",
           "when": "false"
+        },
+        {
+          "command": "carrycontext.showCurrentBranchOnly",
+          "when": "!carrycontext.currentBranchOnly"
+        },
+        {
+          "command": "carrycontext.showAllBranches",
+          "when": "carrycontext.currentBranchOnly"
         }
       ]
     }

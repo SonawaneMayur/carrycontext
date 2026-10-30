@@ -3,7 +3,8 @@ const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
 const { saveConfig, normalizeConfig } = require('./core/config');
-const { paths, loadState, lastProcessed, gatherSessions, updateHandoff, activateBranch, listSavedHandoffs, syncTargets, resumePrompt } = require('./core/handoff');
+const { paths, loadState, lastProcessed, gatherSessions, updateHandoff, activateBranch, syncTargets, resumePrompt } = require('./core/handoff');
+const { catalog, search } = require('./core/catalog');
 const { currentBranch, headFile } = require('./core/git');
 const { installClaudeHooks, updateHookSettings, writeHookScript, hooksInstalled, processPayload, pendingPayloads } = require('./core/claudeHooks');
 const { getProvider, listProviders } = require('./providers');
@@ -65,8 +66,18 @@ function activate(context) {
       return v && (v.workspaceValue !== undefined || v.workspaceFolderValue !== undefined);
     });
   };
-  const tree = new HandoffTree(cwd, config);
-  context.subscriptions.push(vscode.window.createTreeView('carrycontext.handoffs', { treeDataProvider: tree }));
+  const currentOnly = () => context.workspaceState.get('currentBranchOnly', false);
+  const tree = new HandoffTree(cwd, config, currentOnly);
+  const view = vscode.window.createTreeView('carrycontext.handoffs', { treeDataProvider: tree });
+  context.subscriptions.push(view);
+  // The panel's filter button: the context key picks which of its two icons is shown.
+  const showCurrentOnly = async (on) => {
+    await context.workspaceState.update('currentBranchOnly', on);
+    await vscode.commands.executeCommand('setContext', 'carrycontext.currentBranchOnly', on);
+    view.description = on ? 'current branch only' : undefined;
+    tree.refresh();
+  };
+  showCurrentOnly(currentOnly());
 
   // Hooks run the CLI outside VS Code: project settings go to .carrycontext/config.json and
   // user-only ones to the per-user config file (see src/core/config.js).
@@ -167,7 +178,7 @@ function activate(context) {
       const actions = [
         { label: '$(sync) Compact All', detail: 'Create a handoff from the latest session of every provider', command: 'carrycontext.compactAll' },
         { label: '$(arrow-swap) Switch To Provider…', detail: 'Continue this work in another assistant', command: 'carrycontext.switchProvider' },
-        { label: '$(note) Open Handoff…', detail: 'Latest handoff or a saved one', command: 'carrycontext.openHandoff' },
+        { label: '$(search) Find Handoff…', detail: 'Search saved handoffs by title, branch or any text inside', command: 'carrycontext.openHandoff' },
         { label: '$(comment-discussion) Create Handoff From a Session…', detail: 'Pick specific sessions', command: 'carrycontext.compactSession' },
         { label: '$(clippy) Copy Resume Prompt', command: 'carrycontext.copyResumePrompt' },
         { label: '', kind: vscode.QuickPickItemKind.Separator },
@@ -185,6 +196,8 @@ function activate(context) {
     },
 
     'carrycontext.refreshView': () => refreshStatus(),
+    'carrycontext.showCurrentBranchOnly': () => showCurrentOnly(true),
+    'carrycontext.showAllBranches': () => showCurrentOnly(false),
 
     'carrycontext.compactThisSession': (ref) => {
       const adapter = ref && getProvider(ref.provider);
@@ -225,7 +238,7 @@ function activate(context) {
       for (const id of config().sources) {
         const adapter = getProvider(id);
         if (!adapter?.listSessions) continue;
-        for (const ref of (await adapter.listSessions(dir)).slice(0, 15)) {
+        for (const ref of await adapter.listSessions(dir, { limit: 15 })) {
           items.push({ label: ref.title || ref.id, description: `${adapter.label} · ${ago(ref.updatedAt)}`, adapter, ref });
         }
       }
@@ -258,22 +271,48 @@ function activate(context) {
       await launch(dir, pick.id);
     },
 
+    // Find Handoff: sessions match on title, branch and description as you type; from three
+    // characters on, the text of every saved version is searched too.
     'carrycontext.openHandoff': async () => {
       const dir = cwd();
       if (!dir) return;
-      const p = paths(dir);
-      if (!fs.existsSync(p.handoff)) return vscode.window.showInformationMessage('No handoff yet. Run "CarryContext: Compact All".');
-      const named = listSavedHandoffs(dir).map(({ file, branch, at }) => ({
-        label: path.basename(file, '.md'),
-        description: [branch && branch.replace(/__/g, '/'), ago(at)].filter(Boolean).join(' · '),
-        file,
-      }));
+      const latest = paths(dir).handoff;
+      if (!fs.existsSync(latest)) return vscode.window.showInformationMessage('No handoff yet. Run "CarryContext: Compact All".');
+      const where = (branch, at) => [branch.name, ago(at)].filter(Boolean).join(' · ');
       const branch = currentBranch(dir);
-      const pick = await vscode.window.showQuickPick(
-        [{ label: `Latest (handoff.md)${branch ? ` · ${branch}` : ''}`, description: 'what providers read', file: p.handoff }, ...named],
-        { placeHolder: 'Open which handoff?' },
-      );
-      if (pick) await vscode.window.showTextDocument(vscode.Uri.file(pick.file));
+      /** @type {(vscode.QuickPickItem & {file?: string})[]} */
+      const items = [{ label: `$(note) Latest handoff${branch ? ` · ${branch}` : ''}`, description: 'what assistants read', file: latest }];
+      for (const b of catalog(dir)) {
+        for (const s of b.sessions) items.push({ label: s.title, description: where(b, s.at), detail: s.description, file: s.file });
+      }
+      const pick = vscode.window.createQuickPick();
+      pick.placeholder = 'Find a handoff by title, branch, description or any text inside';
+      pick.matchOnDescription = true;
+      pick.matchOnDetail = true;
+      pick.items = items;
+      pick.onDidChangeValue((value) => {
+        const words = value.trim().toLowerCase().split(/\s+/);
+        if (value.trim().length < 3) return void (pick.items = items);
+        // Text matches only for sessions the list doesn't already show.
+        const shown = new Set(
+          items.filter((i) => words.every((w) => `${i.label} ${i.description || ''} ${i.detail || ''}`.toLowerCase().includes(w))).map((i) => i.file),
+        );
+        const found = search(dir, value).filter((h) => !shown.has(h.session.file));
+        pick.items = found.length
+          ? [
+              ...items,
+              { label: 'Found inside handoffs', kind: vscode.QuickPickItemKind.Separator },
+              ...found.map((h) => ({ label: h.session.title, description: where(h.branch, h.at), detail: h.snippet, file: h.file, alwaysShow: true })),
+            ]
+          : items;
+      });
+      pick.onDidAccept(() => {
+        const file = /** @type {{file?: string} | undefined} */ (pick.selectedItems[0])?.file;
+        pick.hide();
+        if (file) vscode.window.showTextDocument(vscode.Uri.file(file));
+      });
+      pick.onDidHide(() => pick.dispose());
+      pick.show();
     },
 
     'carrycontext.copyResumePrompt': async () => {

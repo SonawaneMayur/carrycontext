@@ -63,7 +63,7 @@ module.exports = {
   id: 'codex',
   label: 'OpenAI Codex CLI',
 
-  async listSessions(cwd) {
+  async listSessions(cwd, { limit = Infinity } = {}) {
     return recentRollouts()
       .map((file) => ({ file, meta: sessionMeta(file) }))
       .filter(({ meta }) => meta && path.resolve(meta.cwd || '') === path.resolve(cwd))
@@ -73,7 +73,8 @@ module.exports = {
         path: file,
         updatedAt: mtime(file),
       }))
-      .sort((a, b) => b.updatedAt - a.updatedAt);
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .slice(0, limit);
   },
 
   async readSession(ref) {

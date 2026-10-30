@@ -4,6 +4,26 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- **One row per session** in the panel, labeled with the session's title and what it was working on. Earlier versions are inside the row instead of filling the list.
+- **Find Handoff** (🔍 at the top of the panel): search saved handoffs by title, branch, description or any text inside them, including earlier versions.
+- **Hover a session** to see its goal, next steps and ✅/⚠️/❌ counts without opening the file.
+- Branches with no handoff for 2 weeks fold into **Older branches**, and a filter at the top of the panel shows only the current branch.
+
+### Changed
+
+- `carrycontext.handoffLimit` now counts versions **per session** instead of per branch.
+- Each assistant's newest sessions moved to **Recent conversations** at the bottom of the panel.
+- The panel reads a small index of saved handoffs (`.carrycontext/handoffs/index.json`, rebuilt automatically) instead of every file, and only the newest transcripts to list conversations.
+
+### Fixed
+
+- **A busy session could delete other sessions' handoffs.** The per-branch limit removed the oldest files on the branch whatever session they came from. Now every session keeps its latest handoff.
+- Handoffs were named after replies like "send", "sure" or "yes". The built-in summary now uses the latest request that says what the work is.
+- Claude Code's background-task notices and "[Request interrupted by user]" markers were treated as your prompts and appeared as handoff names.
+- Work Claude Code recorded on `HEAD` (for example mid-rebase, or in a repo with no commits yet) went into a separate "HEAD" group, so the branch's own handoff, the one assistants read, didn't get it. It now stays with the branch the session was on.
+
 ## [0.4.2] - 2026-10-27
 
 ### Fixed

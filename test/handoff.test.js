@@ -46,13 +46,13 @@ test('compact-all merges sessions from several providers in time order', async (
   assert.match(path.basename(res.sessionFile), /^claude-codex-compact-all--/);
 });
 
-test('saved handoffs are pruned to handoffLimit', async () => {
+test('handoffLimit counts versions per session: every session keeps its latest', async () => {
   const cwd = env.project();
   for (let i = 0; i < 4; i++) {
     const file = writeClaude(cwd, `s${i}`, [{ role: 'user', text: `Distinct request number ${i}` }]);
     await h.updateHandoff({ cwd, sessions: [claudeSession(file)], trigger: 't', config: config({ handoffLimit: 2 }), getApiKey: noKey });
   }
-  assert.equal(h.listSavedHandoffs(cwd).length, 2);
+  assert.equal(h.listSavedHandoffs(cwd).length, 4); // see test/catalog.test.js for versions
 });
 
 test('LLM summarizer: used when it works, heuristic fallback with a note when it fails', async () => {

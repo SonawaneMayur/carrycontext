@@ -8,8 +8,9 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { dataDir } = require('./config');
-const { writeFile, readText, readJson, listFiles, mtime, upsertManagedBlock, rel } = require('./util');
+const { writeFile, readText, readJson, mtime, upsertManagedBlock, rel } = require('./util');
 const { sanitize } = require('./sanitize');
+const { listSaved, pruneHistory } = require('./catalog');
 const { SECTIONS, parseSections, heuristicSections, llmSections, shortText, mergeDecisions } = require('./summarize');
 const { verifyClaims, countClaims, renderClaims, summaryLine } = require('./claims');
 const { currentBranch, branchSlug, gitView, repoState } = require('./git');
@@ -56,7 +57,7 @@ async function gatherSessions(cwd, config) {
   for (const id of config.sources) {
     const adapter = getProvider(id);
     if (!adapter?.listSessions) continue;
-    const [newest] = (await adapter.listSessions(cwd)).filter((s) => s.updatedAt >= since);
+    const [newest] = (await adapter.listSessions(cwd, { limit: 1 })).filter((s) => s.updatedAt >= since);
     if (newest) out.push({ adapter, ref: newest });
   }
   return out;
@@ -309,37 +310,11 @@ function saveHandoff(cwd, doc, config, branch, fileName) {
   const sessionFile = path.join(bp.saved, fileName);
   writeFile(bp.handoff, doc);
   writeFile(sessionFile, doc);
-  const old = listFiles(bp.saved, (f) => f.endsWith('.md')).sort((a, b) => mtime(a) - mtime(b));
-  const keep = Math.max(1, Number(config.handoffLimit) || 50); // never prune every saved handoff
-  for (const f of old.slice(0, Math.max(0, old.length - keep))) fs.rmSync(f, { force: true });
+  // The limit counts each session's versions, and every session keeps its latest.
+  pruneHistory(cwd, branch ? branchSlug(branch) : null, Number(config.handoffLimit) || 50);
   ensureGitignore(cwd);
   if (!branch) syncTargets(cwd, config, doc);
   return sessionFile;
-}
-
-/**
- * Every saved handoff, newest first. `branch` is the folder name (slug) or null for
- * handoffs saved outside git or before branch support.
- * @returns {{file: string, branch: string | null, at: number}[]}
- */
-function listSavedHandoffs(cwd) {
-  const root = paths(cwd).handoffs;
-  const out = [];
-  let entries = [];
-  try {
-    entries = fs.readdirSync(root, { withFileTypes: true });
-  } catch {
-    return out;
-  }
-  for (const e of entries) {
-    const full = path.join(root, e.name);
-    if (e.isDirectory()) {
-      for (const f of listFiles(full, (n) => n.endsWith('.md'))) out.push({ file: f, branch: e.name, at: mtime(f) });
-    } else if (e.name.endsWith('.md')) {
-      out.push({ file: full, branch: null, at: mtime(full) });
-    }
-  }
-  return out.sort((a, b) => b.at - a.at);
 }
 
 /** Copy the canonical handoff into each target provider's location. */
@@ -390,7 +365,7 @@ module.exports = {
   gatherSessions,
   updateHandoff,
   activateBranch,
-  listSavedHandoffs,
+  listSavedHandoffs: listSaved,
   syncTargets,
   resumePrompt,
   SECTIONS,

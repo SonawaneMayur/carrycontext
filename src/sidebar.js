@@ -1,20 +1,37 @@
 // @ts-check
-// Activity Bar panel: latest handoff, recent sessions per provider, and saved handoffs.
+// Activity Bar panel: the latest handoff; saved handoffs by branch (current first), one row
+// per session with its earlier versions inside; branches idle for two weeks under "Older
+// branches"; and each provider's newest conversations at the bottom.
 const vscode = require('vscode');
-const path = require('path');
 const fs = require('fs');
-const { paths, loadState, listSavedHandoffs } = require('./core/handoff');
+const { paths, loadState } = require('./core/handoff');
+const { catalog } = require('./core/catalog');
 const { currentBranch, branchSlug } = require('./core/git');
+const { parseSections } = require('./core/summarize');
 const { getProvider } = require('./providers');
-const { ago, mtime, tildify } = require('./core/util');
+const { ago, readText, tildify } = require('./core/util');
 
 const SESSIONS_PER_PROVIDER = 5;
+const OLDER_AFTER_MS = 14 * 86400000;
+const { Collapsed, Expanded, None } = vscode.TreeItemCollapsibleState;
+
+/**
+ * A row, plus what its children are made from.
+ * @typedef {import('./core/catalog').Branch} Branch
+ * @typedef {import('./core/catalog').Session} Session
+ * @typedef {vscode.TreeItem & {kind?: string, branch?: Branch, session?: Session, branches?: Branch[]}} Row
+ */
 
 class HandoffTree {
-  /** @param {() => string | undefined} cwd @param {() => import('./core/config').Config} config */
-  constructor(cwd, config) {
+  /**
+   * @param {() => string | undefined} cwd
+   * @param {() => import('./core/config').Config} config
+   * @param {() => boolean} currentOnly   show only the checked-out branch's handoffs
+   */
+  constructor(cwd, config, currentOnly) {
     this.cwd = cwd;
     this.config = config;
+    this.currentOnly = currentOnly;
     this._onDidChange = new vscode.EventEmitter();
     this.onDidChangeTreeData = this._onDidChange.event;
   }
@@ -23,20 +40,50 @@ class HandoffTree {
     this._onDidChange.fire(undefined);
   }
 
-  /** @param {vscode.TreeItem} item */
+  /** @param {Row} item */
   getTreeItem(item) {
     return item;
   }
 
-  /** @param {vscode.TreeItem & {kind?: string}} [parent] */
+  /** @param {Row} [parent] */
   async getChildren(parent) {
     const dir = this.cwd();
     if (!dir) return []; // shows the "open a folder" welcome view
-    if (!parent) return [this.latestItem(dir), group('Sessions', 'sessions', 'comment-discussion'), group('Saved handoffs', 'handoffs', 'archive')];
-    if (parent.kind === 'sessions') return this.sessionItems(dir);
-    if (parent.kind === 'handoffs') return this.handoffGroups(dir);
-    if (parent.kind === 'branch') return this.handoffItems(dir, parent.branch);
+    if (!parent) return this.rootItems(dir);
+    const { kind, branch, session, branches } = parent;
+    if (kind === 'branch' && branch) return branch.sessions.map((s) => sessionItem(s, branch));
+    if (kind === 'session' && session) return session.versions.slice(1).map(versionItem);
+    if (kind === 'older' && branches) return branches.map((b) => branchItem(b, false));
+    if (kind === 'conversations') return this.conversationItems(dir);
     return [];
+  }
+
+  /**
+   * Hover text for a session, built the first time it is hovered.
+   * @param {Row} item
+   */
+  resolveTreeItem(item) {
+    if (item.kind === 'session' && item.session && item.branch) item.tooltip = sessionTooltip(item.session, item.branch);
+    return item;
+  }
+
+  rootItems(dir) {
+    const current = currentBranch(dir);
+    const currentSlug = current ? branchSlug(current) : null;
+    const isCurrent = (b) => b.slug !== null && b.slug === currentSlug;
+    let branches = catalog(dir);
+    if (this.currentOnly() && currentSlug) branches = branches.filter(isCurrent);
+    // The checked-out branch first, then the others by their latest handoff.
+    const recent = branches.filter((b) => b.slug === null || isCurrent(b) || Date.now() - b.at < OLDER_AFTER_MS);
+    recent.sort((a, b) => Number(isCurrent(b)) - Number(isCurrent(a)));
+    const older = branches.filter((b) => !recent.includes(b));
+
+    /** @type {Row[]} */
+    const items = [this.latestItem(dir), ...recent.map((b) => branchItem(b, isCurrent(b)))];
+    if (older.length) items.push(group(`Older branches (${older.length})`, 'older', 'archive', 'no handoff for 2 weeks', { branches: older }));
+    if (!branches.length) items.push(note(current && this.currentOnly() ? `No saved handoffs on ${current} yet` : 'Saved handoffs will appear here'));
+    items.push(group('Recent conversations', 'conversations', 'comment-discussion'));
+    return items;
   }
 
   latestItem(dir) {
@@ -61,67 +108,107 @@ class HandoffTree {
     return item;
   }
 
-  async sessionItems(dir) {
+  async conversationItems(dir) {
     const items = [];
     for (const id of this.config().sources) {
       const adapter = getProvider(id);
       if (!adapter?.listSessions) continue;
-      for (const ref of (await adapter.listSessions(dir)).slice(0, SESSIONS_PER_PROVIDER)) {
+      for (const ref of await adapter.listSessions(dir, { limit: SESSIONS_PER_PROVIDER })) {
         const item = new vscode.TreeItem(ref.title || ref.id.slice(0, 8));
         item.description = `${adapter.label} · ${ago(ref.updatedAt)}`;
-        item.tooltip = `${tildify(ref.path)}\nClick to create a handoff from this session`;
+        item.tooltip = `${tildify(ref.path)}\nClick to create a handoff from this conversation`;
         item.iconPath = new vscode.ThemeIcon('comment');
         item.contextValue = 'session';
         item.command = { command: 'carrycontext.compactThisSession', title: 'Create handoff', arguments: [ref] };
         items.push(item);
       }
     }
-    if (!items.length) items.push(note(`No sessions from ${this.config().sources.join(', ')} in this folder yet`));
+    if (!items.length) items.push(note(`No conversations from ${this.config().sources.join(', ')} in this folder yet`));
     return items;
-  }
-
-  /** One folder per branch (current branch first); flat list outside git. */
-  handoffGroups(dir) {
-    const saved = listSavedHandoffs(dir);
-    if (!saved.length) return [note('Saved handoffs will appear here')];
-    const branches = [...new Set(saved.map((s) => s.branch))];
-    if (branches.length === 1 && branches[0] === null) return this.handoffItems(dir, null);
-    const current = currentBranch(dir);
-    const currentSlug = current && branchSlug(current);
-    branches.sort((a, b) => Number(b === currentSlug) - Number(a === currentSlug));
-    return branches.map((slug) => {
-      const label = slug ? slug.replace(/__/g, '/') : '(no branch)';
-      const item = Object.assign(
-        new vscode.TreeItem(label, slug === currentSlug ? vscode.TreeItemCollapsibleState.Expanded : vscode.TreeItemCollapsibleState.Collapsed),
-        { kind: 'branch', branch: slug },
-      );
-      item.description = slug === currentSlug ? 'current' : '';
-      item.iconPath = new vscode.ThemeIcon('git-branch');
-      return item;
-    });
-  }
-
-  handoffItems(dir, branch) {
-    const files = listSavedHandoffs(dir)
-      .filter((s) => s.branch === branch)
-      .map((s) => s.file);
-    if (!files.length) return [note('Saved handoffs will appear here')];
-    return files.map((file) => {
-      const [session, description] = path.basename(file, '.md').split('--');
-      const item = new vscode.TreeItem(description ? description.replace(/-/g, ' ') : session);
-      item.description = `${session} · ${ago(mtime(file))}`;
-      item.tooltip = tildify(file);
-      item.iconPath = new vscode.ThemeIcon('markdown');
-      item.contextValue = 'handoffFile';
-      item.resourceUri = vscode.Uri.file(file);
-      item.command = { command: 'vscode.open', title: 'Open', arguments: [vscode.Uri.file(file)] };
-      return item;
-    });
   }
 }
 
-function group(label, kind, icon) {
-  const item = Object.assign(new vscode.TreeItem(label, vscode.TreeItemCollapsibleState.Expanded), { kind });
+/**
+ * A branch, expanded when it is checked out.
+ * @param {Branch} branch
+ * @param {boolean} current
+ */
+function branchItem(branch, current) {
+  const name = branch.slug === null ? 'Saved handoffs' : branch.name === 'HEAD' ? 'detached HEAD' : branch.name;
+  const count = `${branch.sessions.length} session${branch.sessions.length === 1 ? '' : 's'}`;
+  /** @type {Row} */
+  const item = Object.assign(new vscode.TreeItem(name, current || branch.slug === null ? Expanded : Collapsed), { kind: 'branch', branch });
+  // A separate id while checked out, so switching to a branch expands it even if it was collapsed.
+  item.id = `branch:${branch.slug ?? ''}${current ? ':current' : ''}`;
+  item.description = current ? `current · ${count}` : `${count} · ${ago(branch.at)}`;
+  item.tooltip = `${name}\n${count}, last handoff ${ago(branch.at)}`;
+  item.iconPath = new vscode.ThemeIcon(branch.slug === null ? 'archive' : 'git-branch');
+  return item;
+}
+
+/**
+ * One row per session: opens its latest handoff, with the earlier versions inside.
+ * @param {Session} session
+ * @param {Branch} branch
+ */
+function sessionItem(session, branch) {
+  /** @type {Row} */
+  const item = Object.assign(new vscode.TreeItem(session.title, session.versions.length > 1 ? Collapsed : None), { kind: 'session', session, branch });
+  item.id = `session:${branch.slug ?? ''}:${session.key}`;
+  item.description = [session.description, ago(session.at)].filter(Boolean).join(' · ');
+  item.iconPath = new vscode.ThemeIcon('comment-discussion');
+  return opens(item, session.file);
+}
+
+/**
+ * An earlier version of a session's handoff, named by when it was saved.
+ * @param {import('./core/catalog').Version} version
+ */
+function versionItem(version) {
+  const when = new Date(version.at).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const item = new vscode.TreeItem(when);
+  item.id = `version:${version.file}`;
+  item.description = version.description;
+  item.tooltip = tildify(version.file);
+  item.iconPath = new vscode.ThemeIcon('history');
+  return opens(item, version.file);
+}
+
+/** Make a row open `file`, with the "copy" and "use as latest" actions. */
+function opens(item, file) {
+  const uri = vscode.Uri.file(file);
+  item.contextValue = 'handoffFile';
+  item.resourceUri = uri;
+  item.command = { command: 'vscode.open', title: 'Open', arguments: [uri] };
+  return item;
+}
+
+/**
+ * What the session is about, what's next and what was verified, without opening the file.
+ * @param {Session} session
+ * @param {Branch} branch
+ */
+function sessionTooltip(session, branch) {
+  const next = (parseSections(readText(session.file) || '')['Next steps'] || '').split('\n').filter((l) => l.trim()).slice(0, 5);
+  const v = session.verification;
+  const earlier = session.versions.length - 1;
+  const md = new vscode.MarkdownString();
+  md.appendMarkdown('**').appendText(session.title).appendMarkdown('**\n\n');
+  md.appendText([branch.name, session.providers.join(', '), `saved ${ago(session.at)}`].filter(Boolean).join(' · '));
+  if (session.goal) md.appendMarkdown('\n\n**Goal:** ').appendText(session.goal);
+  if (session.description && session.description !== session.goal) md.appendMarkdown('\n\n**Working on:** ').appendText(session.description);
+  if (next.length) md.appendMarkdown(`\n\n**Next steps:**\n\n${next.join('\n')}`);
+  if (v) md.appendMarkdown(`\n\n✅ ${v.verified} verified · ⚠️ ${v.unverified} unverified · ❌ ${v.contradicted} contradicted`);
+  md.appendMarkdown('\n\n').appendText(`${earlier ? `${earlier} earlier version${earlier === 1 ? '' : 's'} · ` : ''}${tildify(session.file)}`);
+  return md;
+}
+
+/** A collapsed group row. */
+function group(label, kind, icon, description = '', extra = {}) {
+  /** @type {Row} */
+  const item = Object.assign(new vscode.TreeItem(label, Collapsed), { kind, ...extra });
+  item.id = `group:${kind}`;
+  item.description = description;
   item.iconPath = new vscode.ThemeIcon(icon);
   return item;
 }
