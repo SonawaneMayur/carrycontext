@@ -4,6 +4,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-30
+
 ### Added
 
 - **One row per session** in the panel, labeled with the session's title and what it was working on. Earlier versions are inside the row instead of filling the list.
@@ -101,7 +103,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/SonawaneMayur/carrycontext/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.3.1...v0.4.0
