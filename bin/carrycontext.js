@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
 // CarryContext CLI. Claude Code hooks call it, and it also works on its own:
-//   carrycontext compact-all | sync | show | prompt <provider> | hook claude --payload FILE
+//   carrycontext compact-all | sync | show | usage | prompt <provider> | hook claude --payload FILE
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
@@ -12,6 +12,7 @@ const { readText } = require('../src/core/util');
 const { getLlm, listLlms } = require('../src/llm');
 const { gitAvailable } = require('../src/core/git');
 const { hooksInstalled } = require('../src/core/claudeHooks');
+const { usageSummary, renderReport, renderCsv } = require('../src/core/usage');
 
 function parseArgs(argv) {
   const args = { _: [] };
@@ -102,6 +103,12 @@ async function main() {
     case 'prompt':
       console.log(resumePrompt(cwd, sub || 'claude'));
       break;
+    case 'usage': {
+      // From the logs on this computer only; nothing is sent anywhere.
+      const summary = await usageSummary(cwd, config);
+      process.stdout.write(args.csv ? renderCsv(summary) : renderReport(summary, path.basename(cwd)));
+      break;
+    }
     default:
       console.log(`usage: carrycontext <command> [--cwd DIR]
 
@@ -110,6 +117,7 @@ async function main() {
   activate             make the checked-out git branch's handoff the active one
   doctor               check git, hooks and which summarizers are usable
   show                 print the current handoff
+  usage [--csv]        tokens, models, active time and estimated cost by branch, session and question
   prompt <provider>    print a prompt that tells <provider> to resume from the handoff
   hook claude          used by Claude Code hooks (reads --payload FILE)`);
   }

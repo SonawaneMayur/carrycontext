@@ -25,7 +25,8 @@ const conversations = new Map();
 async function save(cwd, id, text, { title, branch } = {}) {
   const key = `${cwd}:${id}`;
   if (!conversations.has(key)) conversations.set(key, []);
-  conversations.get(key).push({ role: 'user', text, branch }, { role: 'assistant', text: `Done: ${text}`, branch });
+  const usage = { input_tokens: 0, output_tokens: 1000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
+  conversations.get(key).push({ role: 'user', text, branch }, { role: 'assistant', text: `Done: ${text}`, branch, usage });
   const file = writeClaude(cwd, id, conversations.get(key), { title });
   const ref = { provider: 'claude', id, path: file, updatedAt: Date.now() };
   return h.updateHandoff({ cwd, sessions: [{ adapter: getProvider('claude'), ref }], trigger: 'test', config: DEFAULTS, getApiKey: async () => undefined });
@@ -52,19 +53,21 @@ test('branches: the checked-out one first and open, idle ones under "Older branc
 
   const tree = panel(cwd);
   const root = await tree.getChildren();
-  assert.deepEqual(labels(root), ['Latest handoff · main', 'main', 'feature/pay', 'Older branches (1)', 'Recent conversations']);
-  const [, main, pay, older] = root;
+  assert.deepEqual(labels(root), ['Latest handoff · main', 'main', 'feature/pay', 'Older branches (1)', 'Usage', 'Recent conversations']);
+  const [, main, pay, older, usage] = root;
   assert.deepEqual([main.collapsibleState, main.description], [State.Expanded, 'current · 1 session']);
   assert.equal(pay.collapsibleState, State.Collapsed);
   assert.match(pay.description, /^2 sessions · just now$/);
+  assert.equal((await tree.resolveTreeItem(pay)).tooltip, 'feature/pay\n2 sessions, last handoff just now\nUsage: 2.0k tokens · $0.04 · <1m active');
   assert.deepEqual(labels(await tree.getChildren(pay)), ['Payment tests', 'Payments']);
   assert.deepEqual(labels(await tree.getChildren(older)), ['spike/import']);
+  assert.equal(usage.command.command, 'carrycontext.usageReport');
 
   // VS Code refuses a tree with two rows of the same id.
   const ids = (await walk(tree)).map((r) => r.id).filter(Boolean);
   assert.equal(new Set(ids).size, ids.length);
 
-  assert.deepEqual(labels(await panel(cwd, { currentOnly: true }).getChildren()), ['Latest handoff · main', 'main', 'Recent conversations']);
+  assert.deepEqual(labels(await panel(cwd, { currentOnly: true }).getChildren()), ['Latest handoff · main', 'main', 'Usage', 'Recent conversations']);
   git(cwd, 'checkout', '-q', '-b', 'feature/empty');
   assert.deepEqual(labels(await panel(cwd, { currentOnly: true }).getChildren()).slice(1, 2), ['No saved handoffs on feature/empty yet']);
 });
@@ -76,7 +79,7 @@ test('one row per session opens its latest handoff; earlier versions are inside;
 
   const tree = panel(cwd);
   const root = await tree.getChildren();
-  assert.deepEqual(labels(root), ['Latest handoff', 'Saved handoffs', 'Recent conversations']);
+  assert.deepEqual(labels(root), ['Latest handoff', 'Saved handoffs', 'Usage', 'Recent conversations']);
   const [session] = await tree.getChildren(root[1]);
   assert.equal(session.label, 'Payments');
   assert.equal(session.description, 'Add tests for checkout · just now');
@@ -88,11 +91,12 @@ test('one row per session opens its latest handoff; earlier versions are inside;
   assert.equal(earlier.iconPath.id, 'history');
 
   assert.equal(session.tooltip, undefined, 'built when hovered');
-  const hover = tree.resolveTreeItem(session).tooltip.value.replace(/\\/g, '');
+  const hover = (await tree.resolveTreeItem(session)).tooltip.value.replace(/\\/g, '');
   assert.match(hover, /^\*\*Payments\*\*/);
   assert.match(hover, /\*\*Goal:\*\* Build the payments page/);
   assert.match(hover, /\*\*Working on:\*\* Add tests for checkout/);
   assert.match(hover, /\*\*Next steps:\*\*\n\n- Continue from the most recent request/);
+  assert.match(hover, /\*\*Usage:\*\* 2\.0k tokens · \$0\.04\n/);
   assert.match(hover, /1 earlier version · ~\//);
   assert.ok(!hover.includes(env.home), 'no home folder path in the hover text');
 });
@@ -102,11 +106,11 @@ test('empty states, and the newest conversations at the bottom', async () => {
   const cwd = env.project();
   const tree = panel(cwd);
   const root = await tree.getChildren();
-  assert.deepEqual(labels(root), ['No handoff yet: click to Compact All', 'Saved handoffs will appear here', 'Recent conversations']);
-  assert.deepEqual(labels(await tree.getChildren(root[2])), ['No conversations from claude, codex, gemini in this folder yet']);
+  assert.deepEqual(labels(root), ['No handoff yet: click to Compact All', 'Saved handoffs will appear here', 'Usage', 'Recent conversations']);
+  assert.deepEqual(labels(await tree.getChildren(root[3])), ['No conversations from claude, codex, gemini in this folder yet']);
 
   for (let i = 0; i < 7; i++) writeClaude(cwd, `c${i}`, [{ role: 'user', text: `Conversation ${i}` }]);
-  const rows = await tree.getChildren(root[2]);
+  const rows = await tree.getChildren(root[3]);
   assert.equal(rows.length, 5);
   assert.ok(rows.every((r) => r.contextValue === 'session' && r.command.command === 'carrycontext.compactThisSession'));
 });

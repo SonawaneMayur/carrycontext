@@ -7,7 +7,8 @@ const crypto = require('crypto');
 /**
  * Provider-neutral description of a conversation. `commands` are shell runs with their outcome.
  * @typedef {{cmd: string, exit: number}} Command
- * @typedef {{role: 'user'|'assistant', text: string, ts?: string, branch?: string, edits?: string[], commands?: Command[], failedEdits?: string[]}} Turn
+ * `usage` is a Claude API usage object, written with the reply as Claude Code logs it.
+ * @typedef {{role: 'user'|'assistant', text: string, ts?: string, branch?: string, edits?: string[], commands?: Command[], failedEdits?: string[], usage?: object, model?: string}} Turn
  */
 
 let callId = 0;
@@ -45,7 +46,8 @@ function writeClaude(cwd, id, turns, { title } = {}) {
     for (const file of t.failedEdits || []) call('Edit', { file_path: file }, true, 'String to replace not found in file.');
     for (const c of t.commands || []) call('Bash', { command: c.cmd }, c.exit !== 0, c.exit ? `Exit code ${c.exit}\nfailed` : 'ok');
     const base = { sessionId: id, cwd, gitBranch: t.branch, timestamp: ts };
-    lines.push({ ...base, type: t.role, message: { role: t.role, content } });
+    const reply = t.usage ? { id: `msg_${nextId()}`, model: t.model || 'claude-opus-5-5', usage: t.usage } : {};
+    lines.push({ ...base, type: t.role, ...(t.usage && { requestId: `req_${reply.id}` }), message: { role: t.role, content, ...reply } });
     if (results.length) lines.push({ ...base, type: 'user', message: { role: 'user', content: results } });
   }
   const file = path.join(dir, `${id}.jsonl`);

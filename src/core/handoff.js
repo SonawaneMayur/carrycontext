@@ -344,8 +344,9 @@ function resumePrompt(cwd, providerId) {
   return `Read ${file}. It is a handoff from a previous AI session on this project. Summarize your understanding in 3 bullets, then continue from its "Next steps".`;
 }
 
-// Handoffs can contain anything from a conversation, so they stay out of git for now.
-const GITIGNORED = ['handoff.md', 'handoffs/', 'branches/', 'inbox/', 'state.json', 'hook.log'];
+// Handoffs can contain anything from a conversation, so they stay out of git for now. So does
+// usage.json, which holds the start of your most expensive questions.
+const GITIGNORED = ['handoff.md', 'handoffs/', 'branches/', 'inbox/', 'state.json', 'hook.log', 'usage.json'];
 
 /** Add any missing entries; lines the user added are kept. */
 function ensureGitignore(cwd) {
@@ -368,5 +369,6 @@ module.exports = {
   listSavedHandoffs: listSaved,
   syncTargets,
   resumePrompt,
+  ensureGitignore,
   SECTIONS,
 };

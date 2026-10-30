@@ -46,11 +46,28 @@
  */
 
 /**
+ * Token usage of one model reply, as the assistant logged it on this computer.
+ * @typedef {Object} UsageRecord
+ * @property {string} model
+ * @property {string} [ts]          ISO timestamp
+ * @property {string} [branch]      git branch the reply was made on
+ * @property {string} [question]    the user's request it answers
+ * @property {boolean} [subagent]   made by a sub-agent of the session
+ * @property {number} input         uncached input tokens
+ * @property {number} output        output tokens, thinking included
+ * @property {number} cacheRead
+ * @property {number} cacheWrite5m
+ * @property {number} cacheWrite1h
+ * @property {boolean} [fast]       fast mode, which costs more
+ */
+
+/**
  * @typedef {Object} ProviderAdapter
  * @property {string} id
  * @property {string} label
  * @property {(cwd: string, opts?: {limit?: number}) => Promise<SessionRef[]>} [listSessions]  newest first, at most `limit`; omit for target-only providers
  * @property {(ref: SessionRef) => Promise<Message[]>} [readSession]
+ * @property {(ref: SessionRef) => {title?: string, records: UsageRecord[]}} [readUsage]  token usage from local logs; omit if the provider doesn't log it
  * @property {HandoffTarget} [target]
  * @property {{terminal?: (prompt: string, quote: (s: string) => string) => string, vscodeCommand?: string}} [launch]
  */

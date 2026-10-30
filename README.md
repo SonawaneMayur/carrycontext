@@ -36,6 +36,7 @@ To package it: `npx @vscode/vsce package`, then install the `.vsix` file.
 | **Select Summarizer LLM… / Set API Key…** | Choose which LLM writes the handoff (or none) |
 | **Find Handoff…** | Search saved handoffs by title, branch, description or any text inside them (also the 🔍 at the top of the panel) |
 | **Copy Resume Prompt** | Copies a prompt that tells any assistant to read the handoff and continue |
+| **Show Usage Report / Export Usage as CSV…** | Tokens, models, active time and estimated cost by branch, session, model, day and question, from the logs on your computer (see [Usage stats](#usage-stats)) |
 
 The status bar shows how long ago the handoff was updated. Click it to switch provider.
 
@@ -46,9 +47,23 @@ The CarryContext icon in the Activity Bar opens a panel:
 - **Latest handoff:** what every assistant reads now, with its ✅/⚠️/❌ verification counts.
 - **One folder per branch,** the checked-out one first and open. Inside it, **one row per session**: its title, what it was working on, and when. Hover for the goal, next steps and verification; click to open it. Earlier versions are inside the row.
 - **Older branches:** branches with no handoff for 2 weeks, folded away.
+- **Usage:** opens the usage report. Hover a branch or session for its tokens, active time and cost.
 - **Recent conversations:** each assistant's newest sessions; click one to create a handoff from it.
 
 At the top: **Find Handoff** (🔍), **Compact All**, **Switch To Provider**, a filter that shows only the current branch, and refresh.
+
+## Usage stats
+
+**Usage** in the panel (or **CarryContext: Show Usage Report**) shows what your AI work used, by branch, session, model, day and question: replies, tokens, active time and estimated cost. Your branches are usually features or stories, so a branch's total is roughly what that feature cost to build.
+
+- **Local only.** Everything comes from Claude Code's own logs on your computer (`~/.claude/projects`). Nothing is sent anywhere, and prices come from a table built into CarryContext, never from the internet.
+- **Exact token counts.** Each reply counts once (Claude Code logs one reply as several lines), sub-agents included.
+- **Estimated cost** at Anthropic API list prices (built in, as of October 2026). On a Claude subscription you don't pay per token, so read it as what the same work would cost through the API. Models without a built-in price show "no price": add them, or your own rates, in `carrycontext.usage.prices`, or hide cost with `carrycontext.usage.showCost`.
+- **Active time** adds up the gaps between replies and skips breaks longer than 5 minutes.
+- **Questions:** a request's cost includes the replies that follow it, and a reply like "sure" counts toward the request before it.
+- **Export:** **Export Usage as CSV…** writes one row per session, branch, model and day. Text a spreadsheet would run as a formula is neutralized.
+- **Fast:** totals per session are cached in `.carrycontext/usage.json` (git-ignored, no paths) and recomputed only when a log changes.
+- **Not included yet:** Codex and Gemini CLI. Copilot and Cursor keep no usage logs on your computer.
 
 ## Where the handoff goes
 
@@ -186,6 +201,7 @@ node bin/carrycontext.js sync          # copy .carrycontext/handoff.md to all ta
 node bin/carrycontext.js show
 node bin/carrycontext.js activate     # make the checked-out branch's handoff active
 node bin/carrycontext.js doctor       # which summarizers are usable; never prints key values
+node bin/carrycontext.js usage        # tokens, models, time and estimated cost (--csv for CSV)
 node bin/carrycontext.js prompt codex  # print a resume prompt for codex
 ```
 
@@ -218,6 +234,7 @@ Leave out `listSessions`/`readSession` for a target-only provider (like Copilot 
 - **Local by default:** nothing leaves your machine unless you pick an LLM summarizer, and then only the redacted transcript goes to that provider.
 - **API keys** live in VS Code's secret storage (or your environment for the CLI), never in project files.
 - **Repos can't redirect your data:** the summarizer, its URL and redaction are user-only settings, so a cloned repo's `.vscode/settings.json` or `.carrycontext/config.json` can't send your conversation or API key elsewhere. Summaries go over https only (http only to localhost).
+- **Usage stats stay local:** read from the logs on your computer and priced from a built-in table, with no network call. Question text in the report is redacted like a handoff, and the cache stores no paths.
 
 Details, and how to report a vulnerability privately: [SECURITY.md](SECURITY.md).
 
@@ -226,7 +243,7 @@ Details, and how to report a vulnerability privately: [SECURITY.md](SECURITY.md)
 No dependencies; Node 22+ and git are all you need.
 
 ```sh
-npm test               # 90 tests in under a second
+npm test               # the full suite, about a minute
 npm run test:coverage  # with the coverage minimums CI enforces
 npm run check          # syntax and manifest checks
 ```
@@ -241,6 +258,7 @@ src/extension.js           VS Code commands, status bar, idle polling
 src/sidebar.js             the panel
 src/core/handoff.js        gather sessions → summarize → write per branch and mirror (no vscode import)
 src/core/catalog.js        saved handoffs by branch and session, the index cache, search
+src/core/usage.js          usage stats from local logs: tokens, active time, estimated cost (no network)
 src/core/git.js            current branch from .git/HEAD; Repository state section from git
 src/core/summarize.js      heuristic + LLM summaries, transcript condensing
 src/core/claudeHooks.js    hook script, settings.local.json merge, /compact-all, inbox
@@ -256,7 +274,7 @@ test/                      node:test suites; test/helpers/ has the sandbox, sess
 
 - Codex and Gemini transcript formats aren't documented and change between versions. Their readers are best-effort and tested against synthetic sessions in their known formats. Claude Code's reader was also tested against real transcripts.
 - The panel (`src/sidebar.js`) is tested against a stand-in for the VS Code API. The rest of the VS Code glue (`src/extension.js`) isn't covered by automated tests yet; everything it calls is.
-- `.carrycontext/.gitignore` excludes `handoff.md`, `handoffs/`, the inbox, state and logs. The provider copies (`.claude/handoff.md`, `.codex/handoff.md`, ...) are outside that folder and not ignored. Handoffs can contain anything from your conversations, so check them before committing.
+- `.carrycontext/.gitignore` excludes `handoff.md`, `handoffs/`, the inbox, state, usage and logs. The provider copies (`.claude/handoff.md`, `.codex/handoff.md`, ...) are outside that folder and not ignored. Handoffs can contain anything from your conversations, so check them before committing.
 
 ## Author
 

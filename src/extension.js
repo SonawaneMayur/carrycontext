@@ -1,15 +1,17 @@
 // @ts-check
 const vscode = require('vscode');
+const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const { saveConfig, normalizeConfig } = require('./core/config');
 const { paths, loadState, lastProcessed, gatherSessions, updateHandoff, activateBranch, syncTargets, resumePrompt } = require('./core/handoff');
 const { catalog, search } = require('./core/catalog');
+const { usageSummary, renderReport, renderCsv } = require('./core/usage');
 const { currentBranch, headFile } = require('./core/git');
 const { installClaudeHooks, updateHookSettings, writeHookScript, hooksInstalled, processPayload, pendingPayloads } = require('./core/claudeHooks');
 const { getProvider, listProviders } = require('./providers');
 const { getLlm, listLlms } = require('./llm');
-const { ago, readText, shellQuote: posixQuote } = require('./core/util');
+const { ago, readText, tildify, shellQuote: posixQuote } = require('./core/util');
 const { HandoffTree } = require('./sidebar');
 
 const POLL_MS = 30000;
@@ -55,6 +57,7 @@ function activate(context) {
       autoUpdate: { enabled: c.get('autoUpdate.enabled', true), idleSeconds: c.get('autoUpdate.idleSeconds') },
       redact: { enabled: user('redact.enabled', true), extraPatterns: user('redact.extraPatterns', []) },
       verify: { enabled: c.get('verify.enabled', true) },
+      usage: { showCost: c.get('usage.showCost', true), prices: c.get('usage.prices', {}) },
     });
   };
 
@@ -181,6 +184,7 @@ function activate(context) {
         { label: '$(search) Find Handoff…', detail: 'Search saved handoffs by title, branch or any text inside', command: 'carrycontext.openHandoff' },
         { label: '$(comment-discussion) Create Handoff From a Session…', detail: 'Pick specific sessions', command: 'carrycontext.compactSession' },
         { label: '$(clippy) Copy Resume Prompt', command: 'carrycontext.copyResumePrompt' },
+        { label: '$(graph) Usage Report', detail: 'Tokens, models, active time and estimated cost, from the logs on this computer', command: 'carrycontext.usageReport' },
         { label: '', kind: vscode.QuickPickItemKind.Separator },
         { label: '$(sparkle) Select Summarizer LLM…', detail: `Now: ${config().summarizer.provider}`, command: 'carrycontext.selectSummarizer' },
         { label: '$(key) Set API Key…', command: 'carrycontext.setApiKey' },
@@ -196,6 +200,31 @@ function activate(context) {
     },
 
     'carrycontext.refreshView': () => refreshStatus(),
+
+    // Usage comes from the assistants' logs on this computer; nothing is sent anywhere. The
+    // report opens as an unsaved tab, so nothing lands in the project unless you save it.
+    'carrycontext.usageReport': async () => {
+      const dir = cwd();
+      if (!dir) return vscode.window.showWarningMessage('Open a folder first.');
+      const summary = await vscode.window.withProgress({ location: vscode.ProgressLocation.Window, title: 'CarryContext: reading usage' }, () =>
+        usageSummary(dir, config()),
+      );
+      const doc = await vscode.workspace.openTextDocument({ language: 'markdown', content: renderReport(summary, path.basename(dir)) });
+      await vscode.commands.executeCommand('markdown.showPreview', doc.uri).then(undefined, () => vscode.window.showTextDocument(doc));
+    },
+
+    'carrycontext.exportUsage': async () => {
+      const dir = cwd();
+      if (!dir) return vscode.window.showWarningMessage('Open a folder first.');
+      const target = await vscode.window.showSaveDialog({
+        defaultUri: vscode.Uri.file(path.join(os.homedir(), `carrycontext-usage-${path.basename(dir)}.csv`)),
+        filters: { CSV: ['csv'] },
+      });
+      if (!target) return;
+      fs.writeFileSync(target.fsPath, renderCsv(await usageSummary(dir, config())));
+      vscode.window.showInformationMessage(`CarryContext: usage saved to ${tildify(target.fsPath)}`);
+    },
+
     'carrycontext.showCurrentBranchOnly': () => showCurrentOnly(true),
     'carrycontext.showAllBranches': () => showCurrentOnly(false),
 

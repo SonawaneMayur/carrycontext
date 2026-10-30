@@ -102,6 +102,53 @@ module.exports = {
     return out;
   },
 
+  /**
+   * Token usage per reply, from this session's log and its sub-agents' logs. Claude Code writes
+   * one reply as several lines that repeat the same usage, so each reply counts once.
+   */
+  readUsage(ref) {
+    const subagents = listFiles(path.join(path.dirname(ref.path), ref.id, 'subagents'), (f) => f.endsWith('.jsonl'));
+    // Sub-agents run inside the session's turns, so merging by time keeps each reply with its question.
+    const entries = [ref.path, ...subagents].flatMap((file, i) => readJsonl(file).map((e) => (i ? { ...e, isSidechain: true } : e)));
+    if (subagents.length) entries.sort((a, b) => (a.timestamp || '').localeCompare(b.timestamp || ''));
+    /** @type {import('./types').UsageRecord[]} */
+    const records = [];
+    const seen = new Set();
+    let customTitle;
+    let aiTitle;
+    let lastBranch;
+    let question = '';
+    for (const e of entries) {
+      if (e.type === 'custom-title' && e.customTitle) customTitle = e.customTitle;
+      if (e.type === 'ai-title' && e.aiTitle) aiTitle = e.aiTitle;
+      const branch = e.gitBranch === 'HEAD' ? lastBranch : e.gitBranch || undefined;
+      if (branch) lastBranch = branch;
+      question = promptText(e) || question;
+      const m = e.message;
+      if (e.type !== 'assistant' || !m?.usage || !m.model || m.model.startsWith('<')) continue; // "<synthetic>": not from a model
+      if (m.id) {
+        if (seen.has(`${m.id}:${e.requestId}`)) continue;
+        seen.add(`${m.id}:${e.requestId}`);
+      }
+      const u = m.usage;
+      const write1h = u.cache_creation?.ephemeral_1h_input_tokens || 0;
+      records.push({
+        model: m.model,
+        ts: e.timestamp,
+        branch,
+        question,
+        subagent: Boolean(e.isSidechain),
+        input: u.input_tokens || 0,
+        output: u.output_tokens || 0,
+        cacheRead: u.cache_read_input_tokens || 0,
+        cacheWrite5m: u.cache_creation?.ephemeral_5m_input_tokens ?? Math.max(0, (u.cache_creation_input_tokens || 0) - write1h),
+        cacheWrite1h: write1h,
+        fast: u.speed === 'fast',
+      });
+    }
+    return { title: customTitle || aiTitle || ref.title, records };
+  },
+
   target: {
     // Picked up by the SessionStart hook (see claudeHooks.js), so no instruction file edit is needed.
     handoffFile: (cwd) => path.join(cwd, '.claude', 'handoff.md'),
@@ -120,6 +167,18 @@ function attachResult(call, result) {
   const exit = content.match(/^Exit code (\d+)/);
   if (exit) call.exitCode = Number(exit[1]);
   else if (call.ok && /^(Bash|shell)$/i.test(call.name)) call.exitCode = 0;
+}
+
+/** What the user typed in a transcript entry, without attached IDE context; '' for anything else. */
+function promptText(e) {
+  if (e.type !== 'user' || e.isMeta || e.isSidechain || e.isCompactSummary) return '';
+  const c = e.message?.content;
+  const blocks = typeof c === 'string' ? [{ type: 'text', text: c }] : c || [];
+  return blocks
+    .filter((b) => b.type === 'text' && b.text)
+    .map((b) => b.text.replace(ATTACHED, '').trim())
+    .filter((t) => t && !NOISE.test(t))
+    .join('\n');
 }
 
 function firstPrompt(file) {

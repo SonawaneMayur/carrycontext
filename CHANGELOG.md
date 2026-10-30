@@ -4,6 +4,12 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- **Usage stats**, read only from the logs on your computer (nothing is sent anywhere): replies, tokens, active time and estimated cost by branch, session, model, day and question. Open **Usage** in the panel or **Show Usage Report**; hover a branch or session for its figures; **Export Usage as CSV…** for spreadsheets; `carrycontext usage` in a terminal.
+- Cost uses Anthropic API list prices built into CarryContext (as of October 2026), never fetched. Set your own in `carrycontext.usage.prices`, or hide cost with `carrycontext.usage.showCost`.
+- Token counts are exact: each reply counts once, sub-agents included. A reply like "sure" counts toward the request before it.
+
 ## [0.5.0] - 2026-10-30
 
 ### Added

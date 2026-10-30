@@ -1,11 +1,12 @@
 // @ts-check
 // Activity Bar panel: the latest handoff; saved handoffs by branch (current first), one row
 // per session with its earlier versions inside; branches idle for two weeks under "Older
-// branches"; and each provider's newest conversations at the bottom.
+// branches"; usage; and each provider's newest conversations at the bottom.
 const vscode = require('vscode');
 const fs = require('fs');
 const { paths, loadState } = require('./core/handoff');
 const { catalog } = require('./core/catalog');
+const { usageSummary, describe, sessionOnBranch } = require('./core/usage');
 const { currentBranch, branchSlug } = require('./core/git');
 const { parseSections } = require('./core/summarize');
 const { getProvider } = require('./providers');
@@ -59,12 +60,31 @@ class HandoffTree {
   }
 
   /**
-   * Hover text for a session, built the first time it is hovered.
+   * Hover text for a branch or session, with its usage, built the first time it is hovered.
    * @param {Row} item
    */
-  resolveTreeItem(item) {
-    if (item.kind === 'session' && item.session && item.branch) item.tooltip = sessionTooltip(item.session, item.branch);
+  async resolveTreeItem(item) {
+    const dir = this.cwd();
+    if (!dir || !item.branch || (item.kind !== 'branch' && item.kind !== 'session')) return item;
+    const summary = await this.usage(dir);
+    const showCost = this.config().usage?.showCost !== false;
+    const { branch, session } = item;
+    if (session) {
+      const used = summary && sessionOnBranch(summary, session.key, branch.name);
+      item.tooltip = sessionTooltip(session, branch, used ? describe(used, showCost) : '');
+    } else {
+      const used = summary?.branches.find((b) => b.name === branch.name);
+      item.tooltip = [String(item.label), `${count(branch)}, last handoff ${ago(branch.at)}`, used && `Usage: ${describe(used, showCost)}`].filter(Boolean).join('\n');
+    }
     return item;
+  }
+
+  /** This project's usage, reused for 30 seconds so hovering several rows reads the logs once. */
+  usage(dir) {
+    if (!this._usage || this._usage.dir !== dir || Date.now() - this._usage.at > 30000) {
+      this._usage = { dir, at: Date.now(), summary: usageSummary(dir, this.config()).catch(() => null) };
+    }
+    return this._usage.summary;
   }
 
   rootItems(dir) {
@@ -82,7 +102,7 @@ class HandoffTree {
     const items = [this.latestItem(dir), ...recent.map((b) => branchItem(b, isCurrent(b)))];
     if (older.length) items.push(group(`Older branches (${older.length})`, 'older', 'archive', 'no handoff for 2 weeks', { branches: older }));
     if (!branches.length) items.push(note(current && this.currentOnly() ? `No saved handoffs on ${current} yet` : 'Saved handoffs will appear here'));
-    items.push(group('Recent conversations', 'conversations', 'comment-discussion'));
+    items.push(usageItem(this.config().usage?.showCost !== false), group('Recent conversations', 'conversations', 'comment-discussion'));
     return items;
   }
 
@@ -135,14 +155,26 @@ class HandoffTree {
  */
 function branchItem(branch, current) {
   const name = branch.slug === null ? 'Saved handoffs' : branch.name === 'HEAD' ? 'detached HEAD' : branch.name;
-  const count = `${branch.sessions.length} session${branch.sessions.length === 1 ? '' : 's'}`;
   /** @type {Row} */
   const item = Object.assign(new vscode.TreeItem(name, current || branch.slug === null ? Expanded : Collapsed), { kind: 'branch', branch });
   // A separate id while checked out, so switching to a branch expands it even if it was collapsed.
   item.id = `branch:${branch.slug ?? ''}${current ? ':current' : ''}`;
-  item.description = current ? `current · ${count}` : `${count} · ${ago(branch.at)}`;
-  item.tooltip = `${name}\n${count}, last handoff ${ago(branch.at)}`;
+  item.description = current ? `current · ${count(branch)}` : `${count(branch)} · ${ago(branch.at)}`;
   item.iconPath = new vscode.ThemeIcon(branch.slug === null ? 'archive' : 'git-branch');
+  return item;
+}
+
+/** @param {Branch} branch */
+const count = (branch) => `${branch.sessions.length} session${branch.sessions.length === 1 ? '' : 's'}`;
+
+/** Opens the usage report. */
+function usageItem(showCost) {
+  const item = new vscode.TreeItem('Usage');
+  item.id = 'usage';
+  item.description = showCost ? 'tokens, models, time, cost' : 'tokens, models, time';
+  item.tooltip = 'Tokens, models, active time and estimated cost by branch, session and question, from the logs on this computer. Nothing is sent anywhere.';
+  item.iconPath = new vscode.ThemeIcon('graph');
+  item.command = { command: 'carrycontext.usageReport', title: 'Show Usage Report' };
   return item;
 }
 
@@ -184,11 +216,12 @@ function opens(item, file) {
 }
 
 /**
- * What the session is about, what's next and what was verified, without opening the file.
+ * What the session is about, what's next, what was verified and what it used, without opening the file.
  * @param {Session} session
  * @param {Branch} branch
+ * @param {string} usage   e.g. "1.2M tokens · $4.10", or '' when unknown
  */
-function sessionTooltip(session, branch) {
+function sessionTooltip(session, branch, usage) {
   const next = (parseSections(readText(session.file) || '')['Next steps'] || '').split('\n').filter((l) => l.trim()).slice(0, 5);
   const v = session.verification;
   const earlier = session.versions.length - 1;
@@ -199,6 +232,7 @@ function sessionTooltip(session, branch) {
   if (session.description && session.description !== session.goal) md.appendMarkdown('\n\n**Working on:** ').appendText(session.description);
   if (next.length) md.appendMarkdown(`\n\n**Next steps:**\n\n${next.join('\n')}`);
   if (v) md.appendMarkdown(`\n\n✅ ${v.verified} verified · ⚠️ ${v.unverified} unverified · ❌ ${v.contradicted} contradicted`);
+  if (usage) md.appendMarkdown('\n\n**Usage:** ').appendText(usage);
   md.appendMarkdown('\n\n').appendText(`${earlier ? `${earlier} earlier version${earlier === 1 ? '' : 's'} · ` : ''}${tildify(session.file)}`);
   return md;
 }

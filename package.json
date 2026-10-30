@@ -138,6 +138,17 @@
         "icon": "$(filter-filled)"
       },
       {
+        "command": "carrycontext.usageReport",
+        "title": "Show Usage Report",
+        "category": "CarryContext",
+        "icon": "$(graph)"
+      },
+      {
+        "command": "carrycontext.exportUsage",
+        "title": "Export Usage as CSV…",
+        "category": "CarryContext"
+      },
+      {
         "command": "carrycontext.compactThisSession",
         "title": "Create Handoff From This Session",
         "category": "CarryContext",
@@ -259,6 +270,16 @@
           "default": true,
           "description": "Check what the session claims it did (file edits, test and build results, commits) against git and the session's recorded results, and add a Verification section to each handoff. Never runs project code."
         },
+        "carrycontext.usage.showCost": {
+          "type": "boolean",
+          "default": true,
+          "description": "Show estimated cost in usage stats, at Anthropic API list prices. On a Claude subscription you don't pay per token, so the figure is what the same work would cost through the API. Token counts are always shown."
+        },
+        "carrycontext.usage.prices": {
+          "type": "object",
+          "default": {},
+          "markdownDescription": "Your own prices in $ per million tokens, by model id, for models without a built-in price or for a different rate. Example: `{\"claude-opus-5-5\": {\"input\": 4, \"output\": 20, \"cacheRead\": 0.2}}`. Cache writes default to 1.25× input (5-minute) and 2× (1-hour); set `cacheWrite5m` / `cacheWrite1h` to change them. Prices are never fetched from the internet."
+        },
         "carrycontext.plainTerminalPrompt": {
           "type": "boolean",
           "default": false,
@@ -341,6 +362,16 @@
           "command": "carrycontext.installClaudeHooks",
           "when": "view == carrycontext.handoffs",
           "group": "settings@3"
+        },
+        {
+          "command": "carrycontext.usageReport",
+          "when": "view == carrycontext.handoffs",
+          "group": "usage@1"
+        },
+        {
+          "command": "carrycontext.exportUsage",
+          "when": "view == carrycontext.handoffs",
+          "group": "usage@2"
         }
       ],
       "view/item/context": [

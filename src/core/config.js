@@ -15,6 +15,10 @@ const { readJson, writeFile } = require('./util');
  * @property {{enabled: boolean, idleSeconds: number}} autoUpdate
  * @property {{enabled: boolean, extraPatterns: string[]}} redact   secret redaction (see src/security/secrets.js)
  * @property {{enabled: boolean}} verify   check the session's claims against git and recorded results
+ * @property {{showCost: boolean, prices: Record<string, Price>}} usage   token stats (see src/core/usage.js)
+ *
+ * $ per million tokens for one model. Cache writes default to 1.25x input (5-minute) and 2x (1-hour).
+ * @typedef {{input: number, output: number, cacheRead: number, cacheWrite5m?: number, cacheWrite1h?: number}} Price
  */
 
 /** @type {Config} */
@@ -28,6 +32,7 @@ const DEFAULTS = {
   autoUpdate: { enabled: true, idleSeconds: 120 },
   redact: { enabled: true, extraPatterns: [] },
   verify: { enabled: true },
+  usage: { showCost: true, prices: {} },
 };
 
 /**
@@ -76,7 +81,23 @@ function normalizeConfig(raw) {
     },
     redact: { enabled: c.redact?.enabled !== false, extraPatterns: strings(c.redact?.extraPatterns, []) },
     verify: { enabled: c.verify?.enabled !== false },
+    usage: { showCost: c.usage?.showCost !== false, prices: prices(c.usage?.prices) },
   };
+}
+
+const rate = (v) => Number.isFinite(v) && v >= 0;
+
+/** Price overrides by model id, numbers only; anything malformed is dropped. */
+function prices(value) {
+  /** @type {Record<string, Price>} */
+  const out = {};
+  for (const [model, p] of Object.entries(value && typeof value === 'object' ? value : {})) {
+    if (!/^[a-z0-9][\w.:@-]*$/i.test(model) || !p || !rate(p.input) || !rate(p.output)) continue;
+    out[model] = { input: p.input, output: p.output, cacheRead: rate(p.cacheRead) ? p.cacheRead : p.input / 10 };
+    if (rate(p.cacheWrite5m)) out[model].cacheWrite5m = p.cacheWrite5m;
+    if (rate(p.cacheWrite1h)) out[model].cacheWrite1h = p.cacheWrite1h;
+  }
+  return out;
 }
 
 /** Config shared by the extension and the CLI (hooks). Never holds API keys. */
