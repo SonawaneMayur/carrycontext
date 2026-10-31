@@ -1,5 +1,6 @@
 node_modules/
 *.vsix
+.DS_Store
 .carrycontext/
 # Claude Code's per-user files: hook settings, and the handoff copy CarryContext writes there
 .claude/
