@@ -4,6 +4,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.6.2] - 2026-10-31
+
 ### Added
 
 - **Conversations are saved before you move on.** Starting another conversation used to leave the last one unsaved unless you compacted or ended it, because only each assistant's newest conversation was checked. Now every conversation with unsaved work is saved once it has been idle for 2 minutes, and on a branch switch all of them are saved at once, to the branch they happened on.
@@ -133,7 +135,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.1...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.2...HEAD
+[0.6.2]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.4.2...v0.5.0
