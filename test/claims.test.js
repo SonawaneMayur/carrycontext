@@ -6,7 +6,7 @@ const { sandbox, hasGit, git, read } = require('./helpers/env');
 const { writeClaude } = require('./helpers/sessions');
 
 const env = sandbox();
-const { verifyClaims, countClaims, renderClaims, registerClaimChecker, listClaimCheckers, TEST_COMMAND, BUILD_COMMAND } = require('../src/core/claims');
+const { verifyClaims, countClaims, renderClaims, registerClaimChecker, listClaimCheckers, testOrBuild, TEST_COMMAND, BUILD_COMMAND } = require('../src/core/claims');
 const { gitView } = require('../src/core/git');
 const { DEFAULTS } = require('../src/core/config');
 const h = require('../src/core/handoff');
@@ -120,6 +120,23 @@ test('command patterns recognize common test and build tools', () => {
     assert.doesNotMatch(cmd, TEST_COMMAND, cmd);
     assert.doesNotMatch(cmd, BUILD_COMMAND, cmd);
   }
+});
+
+test('only commands that run count, not test commands written inside strings, heredocs or files', () => {
+  const runs = {
+    'cd app && CI=1 npm test 2>&1 | tail -5': 'npm test',
+    "bash -lc 'npm run build && npm test'": 'npm test',
+    'bash -lc npm run build': 'npm run build',
+    'ELECTRON_RUN_AS_NODE=1 "$NODE" --test "test/**/*.test.js"': 'node --test',
+    'node --experimental-test-coverage --test-coverage-lines=90 --test': 'node --test',
+    './node_modules/.bin/jest --ci': 'jest',
+  };
+  for (const [line, name] of Object.entries(runs)) assert.equal(testOrBuild(line)?.name, name, line);
+  const mentions = ['echo npm test', 'grep -n "npm test" README.md', "cat > ci.yml <<'EOF'\nrun: npm test\nEOF", `python3 -c "print('ran npm test')"`, 'git commit -m "Fix npm test"'];
+  for (const line of mentions) assert.equal(testOrBuild(line), null, line);
+  // A failed command that only mentions a test is not a failed test.
+  const claims = verifyClaims([run(`./helper --prompt "I edited src/a.js and ran npm test, which passed."`, 1, false, 1)], { cwd: env.project(), git: null });
+  assert.deepEqual(claims, []);
 });
 
 test('mentioned commits are checked to exist', { skip: skipGit }, () => {

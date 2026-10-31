@@ -54,10 +54,10 @@ test('the short description skips replies that say nothing about the work', () =
   const sec = s.heuristicSections([user('Build the export feature'), assistant('Started'), user('sure, send it'), user('thanks!')], {});
   assert.equal(sec['Short description'], 'Build the export feature');
   assert.equal(s.heuristicSections([user('ok'), user('yes go ahead')], {})['Short description'], '', 'the goal names it instead');
-  for (const reply of ['send', 'Sure.', 'ok send it', 'yes do it', 'thank you', 'LGTM', '<task-notification>x</task-notification>']) {
+  for (const reply of ['send', 'Sure.', 'ok send it', 'yes do it', 'thank you', 'LGTM', '<task-notification>x</task-notification>', 'yes it looks right', "That's fine for now", 'it works for me']) {
     assert.equal(s.isSubstantive(reply), false, reply);
   }
-  for (const request of ['Add tests', 'okay draft emails for the remaining test cases', 'no, use pnpm instead', 'Notice the bug in login']) {
+  for (const request of ['Add tests', 'okay draft emails for the remaining test cases', 'no, use pnpm instead', 'Notice the bug in login', 'yes it looks right, now fix the README', 'रीडमी अपडेट करो']) {
     assert.equal(s.isSubstantive(request), true, request);
   }
 });
@@ -74,6 +74,28 @@ test('constraintStatements picks rule-like sentences only', () => {
     found.map((f) => f.replace(/ _\(user request\)_$/, '')),
     ["Don't publish my email anywhere.", 'Use pnpm instead of npm.'],
   );
+});
+
+test('constraintStatements skips questions and remarks that only contain "don\'t"', () => {
+  const found = s.constraintStatements([
+    user("How can I solve this, tools don't know the branch? I don't have any branches yet. Do not log tokens. No network calls required here."),
+    user('Keep handoff files by session name, always.'),
+  ]);
+  assert.deepEqual(
+    found.map((f) => f.replace(/ _\(user request\)_$/, '')),
+    ['Do not log tokens.', 'No network calls required here.', 'Keep handoff files by session name, always.'],
+  );
+});
+
+test('mergeDecisions drops earlier picks from user requests that are not rules, and keeps the rest as written', () => {
+  const kept = ["- Don't publish my email. _(2026-10-29 · main · user request)_", '- How should we store it? Chose JSON over SQLite _(2026-10-29 · main)_'];
+  const existing = [
+    "- how can I solve this, tools don't know that? _(2026-10-30 · main · user request)_",
+    kept[0],
+    '- not seeing older branches but I dont have any yet. _(2026-10-30 · main · user request)_',
+    kept[1], // written by an LLM summarizer or by hand: never re-checked
+  ].join('\n');
+  assert.equal(s.mergeDecisions(existing, '', '2026-10-31 · main'), kept.join('\n'));
 });
 
 test('mergeDecisions appends new entries, tags them and skips duplicates and placeholders', () => {

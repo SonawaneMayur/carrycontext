@@ -95,16 +95,13 @@ const checkers = [
   {
     id: 'test-and-build-runs',
     extract(steps) {
-      const last = new Map(); // command kind + match -> last run
+      const last = new Map(); // test or build name -> its last run
       for (const step of steps) {
         const call = step.call;
         if (!call || !SHELL_TOOLS.test(call.name)) continue;
         const raw = call.input?.command ?? call.input?.cmd;
-        const command = (Array.isArray(raw) ? raw.join(' ') : String(raw || '')).replace(/^bash -lc /, '');
-        const test = command.match(TEST_COMMAND);
-        const build = !test && command.match(BUILD_COMMAND);
-        const match = test || build;
-        if (match) last.set(match[0], { label: `\`${match[0]}\``, data: { kind: test ? 'test' : 'build', step } });
+        const run = testOrBuild(Array.isArray(raw) ? raw.join(' ') : String(raw || ''));
+        if (run) last.set(run.name, { label: `\`${run.name}\``, data: { kind: run.kind, step } });
       }
       return [...last.values()];
     },
@@ -143,10 +140,44 @@ const checkers = [
   },
 ];
 
+// Matched against one simple command (see simpleCommands), from its start; group 1 names it.
 const TEST_COMMAND =
-  /\b(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?::[\w-]+)?|(?:uv\s+run\s+)?pytest|go\s+test|cargo\s+test|npx\s+(?:jest|vitest|mocha|playwright\s+test)|jest|vitest|mocha|node\s+--test|make\s+(?:test|check)|gradlew?\s+test|mvn\s+test|rspec|phpunit|dotnet\s+test|swift\s+test|tox)\b/;
+  /^(?:\S*\/)?((?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test(?::[\w-]+)?|(?:uv\s+run\s+)?pytest|python3?\s+-m\s+pytest|go\s+test|cargo\s+test|npx\s+(?:jest|vitest|mocha|playwright\s+test)|jest|vitest|mocha|node\s+--test|make\s+(?:test|check)|gradlew?\s+test|mvn\s+test|rspec|phpunit|dotnet\s+test|swift\s+test|tox)\b/;
 const BUILD_COMMAND =
-  /\b(?:(?:npm|pnpm|yarn|bun)\s+run\s+build(?::[\w-]+)?|tsc(?:\s+-[-\w]+)*|cargo\s+build|go\s+build|gradlew?\s+build|mvn\s+(?:package|install)|swift\s+build|dotnet\s+build)\b/;
+  /^(?:\S*\/)?((?:npm|pnpm|yarn|bun)\s+run\s+build(?::[\w-]+)?|tsc(?:\s+-[-\w]+)*|cargo\s+build|go\s+build|gradlew?\s+build|mvn\s+(?:package|install)|swift\s+build|dotnet\s+build)\b/;
+// Node's test runner from any Node binary: `node --test`, `"$NODE" --test`, `node --experimental-test-coverage --test`.
+const NODE_TEST = /^(?:(?:\S*\/)?node(?:js)?|""|\$\{?\w+\}?)\s+(?:--[\w-]+(?:=\S+)?\s+)*--test(?=\s|$)/;
+
+/**
+ * The simple commands a shell line runs, so "npm test" inside a heredoc, a quoted string or a
+ * file being written isn't taken for a test run. Quoted text becomes "", and leading variable
+ * assignments are dropped: `CI=1 "$NODE" --test x` -> `"" --test x`.
+ */
+function simpleCommands(line) {
+  return line
+    .replace(/^(?:ba|z)?sh\s+-l?c\s+(['"])([\s\S]*)\1\s*$/, '$2') // bash -lc '…'
+    .replace(/^(?:ba|z)?sh\s+-l?c\s+/, '') // Codex's ['bash', '-lc', '…'], joined
+    .replace(/<<-?\s*(['"]?)(\w+)\1([^\n]*)\n[\s\S]*?\n[ \t]*\2[ \t]*(?=\n|$)/g, '$3') // heredoc bodies
+    .replace(/'[^']*'|"(?:\\.|[^"\\])*"/g, '""')
+    .split(/&&|\|\||[;|&\n()`]/)
+    .map((c) => c.trim().replace(/^(?:\w+=\S*\s+)+/, '').replace(/^(?:time|env|exec|nohup)\s+/, ''))
+    .filter(Boolean);
+}
+
+/** The test or build a shell line runs, e.g. {kind: 'test', name: 'npm test'}, or null. A test wins over a build. */
+function testOrBuild(line) {
+  const commands = simpleCommands(line);
+  for (const c of commands) {
+    if (NODE_TEST.test(c)) return { kind: 'test', name: 'node --test' };
+    const test = c.match(TEST_COMMAND);
+    if (test) return { kind: 'test', name: test[1] };
+  }
+  for (const c of commands) {
+    const build = c.match(BUILD_COMMAND);
+    if (build) return { kind: 'build', name: build[1] };
+  }
+  return null;
+}
 
 /** @param {ClaimChecker} checker */
 function registerClaimChecker(checker) {
@@ -189,4 +220,4 @@ function renderClaims(claims) {
 
 const summaryLine = (counts) => `${counts.verified} verified, ${counts.unverified} unverified, ${counts.contradicted} contradicted`;
 
-module.exports = { registerClaimChecker, listClaimCheckers, verifyClaims, countClaims, renderClaims, summaryLine, TEST_COMMAND, BUILD_COMMAND };
+module.exports = { registerClaimChecker, listClaimCheckers, verifyClaims, countClaims, renderClaims, summaryLine, testOrBuild, TEST_COMMAND, BUILD_COMMAND };

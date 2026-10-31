@@ -131,9 +131,16 @@ function heuristicSections(messages, prev) {
   };
 }
 
-// Sentences in user messages that state a rule or a choice.
-const CONSTRAINT = /\b(always|never|don'?t|do not|must|must not|should not|shouldn'?t|instead of|let'?s use|we'?ll use|prefer|avoid|keep .+ (?:out|private)|only use)\b/i;
+// Sentences in user messages that state a rule or a choice: an instruction ("Don't publish my
+// email", "Keep it local"), a requirement ("must", "no network calls required") or a preference.
+// Questions don't count, and neither does "don't" in a plain statement ("I don't have any yet").
+const RULE_START = /^(?:(?:please|and|but|so)\s+)?(?:always|never|don'?t|do not|avoid|only|make sure|keep|stop)\b/i;
+const RULE =
+  /\b(?:always|never|must(?: not)?|should(?:n'?t| not)?|instead of|let'?s (?:use|keep|go with)|we'?ll use|i'?d rather|prefer|only use|keep\b.{1,40}?\b(?:out|private|local)|(?:i|we) (?:don'?t|do not) (?:want|need|like)|no\b[^.,;]{0,40}\b(?:required|needed|allowed))\b/i;
+const QUESTION = /\?\s*$|^(?:how|what|why|which|where|when|who|can|could|should|would|will|is|are|does|did|do(?!\s+not\b))\b/i;
 const MAX_CONSTRAINTS = 5;
+
+const isRule = (sentence) => !QUESTION.test(sentence) && (RULE_START.test(sentence) || RULE.test(sentence));
 
 /** Rule-like statements from the user ("don't publish my email", "use X instead of Y"). */
 function constraintStatements(userMessages) {
@@ -141,7 +148,7 @@ function constraintStatements(userMessages) {
   for (const m of userMessages.slice(-30)) {
     for (const sentence of m.text.split(/(?<=[.!?])\s+|\n+/)) {
       const t = sentence.trim().replace(/\s+/g, ' ');
-      if (t.length >= 15 && t.length <= 220 && CONSTRAINT.test(t) && !/^[<`]/.test(t)) out.push(`${t} _(user request)_`);
+      if (t.length >= 15 && t.length <= 220 && isRule(t) && !/^[<`]/.test(t)) out.push(`${t} _(user request)_`);
     }
   }
   return out.slice(-MAX_CONSTRAINTS);
@@ -162,9 +169,11 @@ function decisionEntries(text) {
 /**
  * Merge decisions into an append-only log: existing entries are kept as written,
  * new ones are added with a date and branch tag, duplicates (by text) are skipped.
+ * Entries the built-in summary took from user requests are checked again, so a question
+ * or a remark an earlier version picked by mistake drops out.
  */
 function mergeDecisions(existing, incoming, tag) {
-  const log = decisionEntries(existing);
+  const log = decisionEntries(existing).filter((e) => !/\buser request\)_$/.test(e) || isRule(e.replace(DECISION_TAG, '')));
   const seen = new Set(log.map(normalize));
   for (const entry of decisionEntries(incoming)) {
     const key = normalize(entry);
@@ -191,8 +200,16 @@ const shortText = (text, words) =>
 const REPLY =
   /^(?:(?:yes|yeah|yep|yup|no|nope|ok|okay|sure|right|correct|agreed|fine|alright|got it|thanks|thank you|thx|please|pls|go ahead|go on|go for it|do it|do that|sounds good|looks good|lgtm|great|perfect|cool|nice|awesome|done|send|sent|continue|proceed)\b[\s,.!]*)+/i;
 
-/** Whether a request says what the work is, so it can name a handoff: "Add tests" does, "sure, send it" doesn't. */
-const isSubstantive = (text) => !text.trim().startsWith('<') && shortText(text.trim().replace(REPLY, ''), 2).split(' ').filter(Boolean).length >= 2;
+// Words that only acknowledge ("it looks right", "that works for me"), so they don't say what the work is.
+const ACK = new Set('it its that thats this all is are looks look seems sounds right good fine great ok okay correct perfect works work now me to for so far then both yes no as well too'.split(' '));
+
+/** Whether a request says what the work is, so it can name a handoff: "Add tests" does, "sure, send it" and "yes it looks right" don't. */
+function isSubstantive(text) {
+  const t = text.trim();
+  if (t.startsWith('<')) return false;
+  const words = shortText(t.replace(REPLY, ''), 12).toLowerCase().replace(/['’]/g, '').split(/[^\p{L}\p{M}\p{N}]+/u).filter(Boolean);
+  return words.length >= 2 && words.some((w) => !ACK.has(w));
+}
 
 /** The newest request that says what the work is, or '' (the goal then names the handoff). */
 const latestRequest = (users) => [...users].reverse().find((m) => isSubstantive(m.text))?.text || '';
