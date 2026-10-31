@@ -102,6 +102,67 @@ test('per-branch: new branches inherit, switching restores, split sessions go to
   assert.deepEqual([...new Set(h.listSavedHandoffs(cwd).map((s) => s.branch))].sort(), ['feature__pay', 'main']);
 });
 
+test('per-branch: switching back to main from a feature branch starts empty, not from the feature', { skip: !hasGit && 'git missing' }, async () => {
+  const cwd = env.project({ git: true });
+  h.activateBranch(cwd, config()); // on main, nothing saved yet
+  git(cwd, 'checkout', '-q', '-b', 'feature/search');
+  fs.writeFileSync(path.join(cwd, 'search.js'), 'x');
+  git(cwd, 'add', '.');
+  git(cwd, 'commit', '-q', '-m', 'Search');
+  const file = writeClaude(cwd, 's', [
+    { role: 'user', text: 'Build product search', branch: 'feature/search' },
+    { role: 'assistant', text: 'Search works', branch: 'feature/search' },
+  ]);
+  await h.updateHandoff({ cwd, sessions: [claudeSession(file)], trigger: 't', config: config(), getApiKey: noKey });
+
+  git(cwd, 'checkout', '-q', 'main'); // main doesn't contain feature/search's work
+  const res = h.activateBranch(cwd, config());
+  assert.deepEqual([res.branch, res.inheritedFrom], ['main', undefined]);
+  const doc = read(path.join(cwd, '.carrycontext', 'handoff.md'));
+  assert.match(doc, /^# Handoff: .* \(main\)$/m);
+  assert.match(doc, /No saved context for `main` yet/);
+  assert.doesNotMatch(doc, /product search|Branched from/);
+  assert.match(read(path.join(cwd, '.claude', 'handoff.md')), /No saved context for `main` yet/, 'assistants get it too');
+});
+
+test('per-branch: messages without a branch go to the branch checked out when they were sent', { skip: !hasGit && 'git missing' }, async () => {
+  const cwd = env.project({ git: true });
+  const before = new Date(Date.now() - 60000).toISOString();
+  git(cwd, 'checkout', '-q', '-b', 'feature/cart'); // recorded in .git/logs/HEAD with the time
+  const after = new Date(Date.now() + 60000).toISOString();
+  // No branch recorded, as in Gemini CLI's logs.
+  const file = writeClaude(cwd, 'g', [
+    { role: 'user', text: 'Plan the cart', ts: before },
+    { role: 'assistant', text: 'Planned', ts: before },
+    { role: 'user', text: 'Build the cart page', ts: after },
+    { role: 'assistant', text: 'Built', ts: after },
+  ]);
+  const res = await h.updateHandoff({ cwd, sessions: [claudeSession(file)], trigger: 't', config: config(), getApiKey: noKey });
+  assert.deepEqual(res.branches.sort(), ['feature/cart', 'main']);
+  const main = read(path.join(cwd, '.carrycontext', 'branches', 'main', 'handoff.md'));
+  assert.match(main, /Plan the cart/);
+  assert.doesNotMatch(main, /Build the cart page/);
+});
+
+test('unsavedSessions: each conversation once idle, oldest first; every one on a branch switch', async () => {
+  const cwd = env.project();
+  const old = writeClaude(cwd, 'old', [{ role: 'user', text: 'Give me a tour' }, { role: 'assistant', text: 'Here it is' }]);
+  const recent = writeClaude(cwd, 'recent', [{ role: 'user', text: 'Add search' }, { role: 'assistant', text: 'Working on it' }]);
+  const ago = (s) => new Date(Date.now() - s * 1000);
+  fs.utimesSync(old, ago(600), ago(600)); // you moved on 10 minutes ago
+  fs.utimesSync(recent, ago(10), ago(10)); // still going
+  const ids = async (opts = {}) => (await h.unsavedSessions(cwd, config(), { idleMs: 120000, ...opts })).map((s) => s.ref.id);
+
+  assert.deepEqual(await ids(), ['old'], 'not only the newest conversation');
+  assert.deepEqual(await ids({ switched: true }), ['old', 'recent'], 'a branch switch saves every one, oldest first');
+  fs.utimesSync(recent, ago(300), ago(300));
+  assert.deepEqual(await ids(), ['old', 'recent']);
+  assert.deepEqual(await ids({ hooked: ['claude'] }), ['old'], "the hooks save Claude's newest conversation");
+  assert.deepEqual(await ids({ hooked: ['claude'], switched: true }), ['old', 'recent'], 'no hook fires on a branch switch');
+  await h.updateHandoff({ cwd, sessions: [claudeSession(old)], trigger: 't', config: config(), getApiKey: noKey });
+  assert.deepEqual(await ids(), ['recent'], 'saved since its last change');
+});
+
 test('decision log accumulates across updates', async () => {
   const cwd = env.project();
   const file = writeClaude(cwd, 'd', [{ role: 'user', text: "Don't commit secrets ever." }]);

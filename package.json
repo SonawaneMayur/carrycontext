@@ -238,7 +238,7 @@
         "carrycontext.autoUpdate.enabled": {
           "type": "boolean",
           "default": true,
-          "description": "Refresh the handoff automatically when a session goes idle (for providers without hooks)."
+          "description": "Save conversations automatically: each one once it has been idle, and all of them when you switch branches. Claude Code's newest conversation is saved by its hooks when they're installed."
         },
         "carrycontext.autoUpdate.idleSeconds": {
           "type": "number",

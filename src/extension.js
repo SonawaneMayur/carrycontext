@@ -4,7 +4,7 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const { saveConfig, normalizeConfig } = require('./core/config');
-const { paths, loadState, lastProcessed, gatherSessions, updateHandoff, activateBranch, syncTargets, resumePrompt } = require('./core/handoff');
+const { paths, loadState, gatherSessions, unsavedSessions, updateHandoff, activateBranch, syncTargets, resumePrompt } = require('./core/handoff');
 const { catalog, search } = require('./core/catalog');
 const { usageSummary, renderReport, renderCsv } = require('./core/usage');
 const { currentBranch, headFile } = require('./core/git');
@@ -152,21 +152,22 @@ function activate(context) {
     }
   }
 
-  // Auto-update for providers without hooks: compact a session once it has been idle long enough.
+  // Auto-update: save each conversation with unsaved work once it has been idle long enough.
   async function poll() {
     const dir = cwd();
     const c = config();
     if (!dir || busy || !c.autoUpdate.enabled) return;
     await drainInbox(10000);
-    const state = loadState(dir);
-    const claudeHooked = hooksInstalled(dir);
-    const idleMs = c.autoUpdate.idleSeconds * 1000;
-    for (const { adapter, ref } of await gatherSessions(dir, c)) {
-      if (adapter.id === 'claude' && claudeHooked) continue; // hooks already cover Claude
-      if (Date.now() - ref.updatedAt < idleMs || lastProcessed(state, ref.path) >= ref.updatedAt) continue;
+    await saveUnsaved(dir, c, false);
+  }
+
+  /** Save conversations with unsaved work, each on its own: idle ones, or on a branch switch every one. */
+  async function saveUnsaved(dir, c, switched) {
+    const hooked = hooksInstalled(dir) ? ['claude'] : []; // the hooks save Claude's newest conversation
+    for (const { adapter, ref } of await unsavedSessions(dir, c, { idleMs: c.autoUpdate.idleSeconds * 1000, hooked, switched })) {
       busy = true;
       try {
-        await compact([{ adapter, ref }], `auto:idle:${adapter.id}`, { open: false });
+        await compact([{ adapter, ref }], `auto:${switched ? 'branch-switch' : 'idle'}:${adapter.id}`, { open: false });
       } catch (e) {
         output.appendLine(`[error] auto-update ${adapter.id}: ${e.message}`);
       } finally {
@@ -476,6 +477,9 @@ function activate(context) {
           : `CarryContext: switched to the ${res.branch} handoff`,
         5000,
       );
+      // The branch you left is done for now: save its conversations (no hook fires on a switch).
+      const c = config();
+      if (c.autoUpdate.enabled && !busy) saveUnsaved(dir, c, true).catch((e) => output.appendLine(`[error] branch switch: ${e.message}`));
     };
     const head = headFile(dir);
     if (head) {

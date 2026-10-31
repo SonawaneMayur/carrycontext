@@ -98,8 +98,9 @@ Named copy examples:
 In a git repo, every branch keeps its own handoff, so switching branches never leaves an assistant talking about the other branch's work.
 
 - **Switching:** when you `git checkout` a branch, CarryContext makes that branch's handoff the active one and copies it to every assistant. In VS Code this happens within about 2 seconds; for Claude Code it also happens when a session starts, even with VS Code closed.
-- **New branches:** a branch with no handoff yet starts with a **Background** section carrying over the previous branch's goal, decisions and gotchas. It's kept until the branch's own work replaces it.
-- **Sessions that span a switch:** Claude Code records the branch on every message, so if you switch branches partway through a session, each part goes into the right branch's handoff. Codex sessions use the branch in their metadata; anything else goes to the checked-out branch.
+- **New branches:** a branch made from the previous one (`git switch -c`) starts with a **Background** section carrying over that branch's goal, decisions and gotchas. It's kept until the branch's own work replaces it. A branch with no handoff that wasn't made from the previous one, such as `main` when you come back from a feature branch, starts empty instead, so no assistant reads the other branch's context as its own.
+- **Sessions that span a switch:** Claude Code records the branch on every message, so if you switch branches partway through a session, each part goes into the right branch's handoff. Codex sessions use the branch in their metadata; messages with no branch, such as Gemini CLI's, go to the branch that was checked out when they were sent.
+- **Saved before you move on:** when you switch branches, every conversation with unsaved work is saved to the branch it happened on. No hook fires on a switch, so this covers Claude Code too. A conversation saved after the switch has no Verification section, because git only describes the checked-out branch; compact before switching for a verified one.
 - **Where you see it:** the status bar shows the branch (`Handoff · feature/payments · 5m ago`), and [the panel](#the-panel) groups saved handoffs by branch with the current one first.
 
 Branch folders replace `/` with `__`, so `feature/payments` is stored as `branches/feature__payments/`. Worktrees and detached HEADs (`detached-<sha>`) are supported. Messages Claude Code records with no branch (`HEAD`, for example mid-rebase) stay with the branch the session was on. Outside git, everything works as a single handoff, as before.
@@ -167,9 +168,9 @@ The command also adds a **`/compact-all`** slash command (`.claude/commands/comp
 
 Hooks run `.carrycontext/hooks/claude-hook.sh`. That script runs `bin/carrycontext.js` with `node` if it's on your PATH, otherwise with the Node runtime bundled in VS Code. If neither is available, it leaves the hook payload in `.carrycontext/inbox/`, and the extension processes it the next time it runs.
 
-## Providers without hooks
+## Saving without hooks
 
-While VS Code is open, the extension checks every 30s for Codex and Gemini sessions in this folder. Once a session has been idle for `carrycontext.autoUpdate.idleSeconds` (default 120), it refreshes the handoff. Claude is also checked this way when its hooks aren't installed.
+While VS Code is open, the extension checks every 30s for conversations in this folder with unsaved work. Once one has been idle for `carrycontext.autoUpdate.idleSeconds` (default 120), it's saved, each conversation on its own, so starting another conversation never leaves the last one unsaved. Claude Code's newest conversation is left to its hooks when they're installed; its earlier ones are saved this way. With an LLM summarizer, each save is one request; the default summary is free.
 
 ## Summarizers
 

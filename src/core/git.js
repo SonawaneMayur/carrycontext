@@ -106,6 +106,11 @@ function baseBranch(cwd, branch) {
   return candidates.find((b) => b !== branch && git(cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${b}`]) !== null);
 }
 
+/** Whether the checked-out commit includes `branch`'s latest commit, as a branch made from it does. */
+function contains(cwd, branch) {
+  return gitAvailable() && git(cwd, ['merge-base', '--is-ancestor', `refs/heads/${branch}`, 'HEAD']) !== null;
+}
+
 const STATUS_LABELS = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'copied', '??': 'untracked' };
 const MAX_LIST = 25;
 
@@ -199,4 +204,4 @@ function repoState(cwd, view = gitView(cwd)) {
   return `_Read from git when this handoff was written. Check it again before relying on it._\n\n${lines.join('\n')}`;
 }
 
-module.exports = { gitDir, headFile, currentBranch, branchAt, branchSlug, gitAvailable, gitView, repoState };
+module.exports = { gitDir, headFile, currentBranch, branchAt, contains, branchSlug, gitAvailable, gitView, repoState };

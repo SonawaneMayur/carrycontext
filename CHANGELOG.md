@@ -4,6 +4,15 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- **Conversations are saved before you move on.** Starting another conversation used to leave the last one unsaved unless you compacted or ended it, because only each assistant's newest conversation was checked. Now every conversation with unsaved work is saved once it has been idle for 2 minutes, and on a branch switch all of them are saved at once, to the branch they happened on.
+
+### Fixed
+
+- **Switching back to `main` from a feature branch gave `main` the feature's context** ("Branched from `feature/…`"), as if `main` were a new branch made from it. A branch now inherits only from a branch it was made from; otherwise it starts with an empty handoff.
+- Messages with no branch recorded (Gemini CLI) went to whichever branch was checked out when the handoff was written. They now go to the branch checked out when they were sent.
+
 ## [0.6.1] - 2026-10-30
 
 ### Fixed

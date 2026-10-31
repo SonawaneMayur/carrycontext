@@ -13,7 +13,7 @@ const { sanitize } = require('./sanitize');
 const { listSaved, pruneHistory } = require('./catalog');
 const { SECTIONS, parseSections, heuristicSections, llmSections, shortText, mergeDecisions } = require('./summarize');
 const { verifyClaims, countClaims, renderClaims, summaryLine } = require('./claims');
-const { currentBranch, branchSlug, gitView, repoState } = require('./git');
+const { currentBranch, branchAt, contains, branchSlug, gitView, repoState } = require('./git');
 const { getProvider, listProviders } = require('../providers');
 const { getLlm } = require('../llm');
 
@@ -64,6 +64,32 @@ async function gatherSessions(cwd, config) {
 }
 
 /**
+ * Conversations with work not saved yet, oldest first, for saving automatically: each one once it
+ * has been quiet for `idleMs`, so starting another conversation doesn't leave the last one unsaved,
+ * and on a branch switch (`switched`) all of them, since the branch you left is done for now.
+ * `hooked` assistants save their newest conversation themselves (Claude Code's hooks), except on
+ * a branch switch, which fires no hook.
+ * @param {string} cwd
+ * @param {import('./config').Config} config
+ * @param {{idleMs: number, hooked?: string[], switched?: boolean}} opts
+ */
+async function unsavedSessions(cwd, config, { idleMs, hooked = [], switched = false }) {
+  const since = Date.now() - config.lookbackHours * 3600000;
+  const state = loadState(cwd);
+  const out = [];
+  for (const id of config.sources) {
+    const adapter = getProvider(id);
+    if (!adapter?.listSessions) continue;
+    (await adapter.listSessions(cwd, { limit: 5 })).forEach((ref, i) => {
+      if (ref.updatedAt < since || lastProcessed(state, ref.path) >= ref.updatedAt) return; // saved since its last change
+      const waiting = !switched && ((i === 0 && hooked.includes(id)) || Date.now() - ref.updatedAt < idleMs);
+      if (!waiting) out.push({ adapter, ref });
+    });
+  }
+  return out.sort((a, b) => a.ref.updatedAt - b.ref.updatedAt);
+}
+
+/**
  * Read sessions, summarize (merging with the previous handoff) and write everywhere.
  * Messages are filed under the branch they were sent on, so one session that spans
  * a branch switch updates both branches' handoffs.
@@ -91,8 +117,12 @@ async function updateHandoff({ cwd, sessions, trigger, config, getApiKey }) {
 
   /** @type {Map<string | null, import('../providers/types').Message[]>} */
   const groups = new Map();
+  const branchOf = current ? branchAt(cwd) : () => undefined;
   for (const m of messages) {
-    const branch = current ? m.branch || current : null; // untagged messages belong to the checked-out branch
+    // Messages without a branch (Gemini CLI records none) belong to the branch checked out when
+    // they were sent, so a conversation saved after a switch stays with the branch it was on.
+    const at = Date.parse(m.ts || '');
+    const branch = current ? m.branch || (at ? branchOf(at) : undefined) || current : null;
     if (!groups.has(branch)) groups.set(branch, []);
     groups.get(branch)?.push(m);
   }
@@ -181,8 +211,14 @@ function activateBranch(cwd, config, branch = currentBranch(cwd)) {
   if (!fs.existsSync(bp.handoff)) {
     const activeDoc = readText(p.handoff);
     if (activeDoc && previous && previous !== branch) {
-      writeFile(bp.handoff, cleanDoc(inheritedDoc(cwd, branch, previous, activeDoc), cwd, config));
-      inheritedFrom = previous;
+      // Only a branch made from the previous one (it has that branch's work) starts from its context.
+      // Switching back to main from a feature branch gets an empty handoff instead.
+      if (contains(cwd, previous)) {
+        writeFile(bp.handoff, cleanDoc(inheritedDoc(cwd, branch, previous, activeDoc), cwd, config));
+        inheritedFrom = previous;
+      } else {
+        writeFile(bp.handoff, cleanDoc(emptyDoc(cwd, branch), cwd, config));
+      }
     } else if (activeDoc) {
       // First run with branch support: the existing handoff belongs to this branch.
       writeFile(bp.handoff, activeDoc);
@@ -216,6 +252,21 @@ function cleanDoc(doc, cwd, config) {
 }
 
 /** Starting handoff for a new branch: the parent's essentials, kept as background. */
+/** A branch's handoff before any work on it is saved, so no assistant reads another branch's context. */
+function emptyDoc(cwd, branch) {
+  return renderDoc({
+    cwd,
+    branch,
+    // In "Current state", which the branch's first saved session replaces (a Goal would be kept).
+    sections: { 'Current state': `_No saved context for \`${branch}\` yet. It appears here once a session on this branch is saved._` },
+    sources: [],
+    trigger: 'branch:switch',
+    summarizer: 'none',
+    session: branch,
+    description: 'no handoff yet',
+  });
+}
+
 function inheritedDoc(cwd, branch, parent, parentDoc) {
   const prev = parseSections(parentDoc);
   const background = [
@@ -364,6 +415,7 @@ module.exports = {
   saveState,
   lastProcessed,
   gatherSessions,
+  unsavedSessions,
   updateHandoff,
   activateBranch,
   listSavedHandoffs: listSaved,
