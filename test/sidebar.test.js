@@ -58,7 +58,7 @@ test('branches: the checked-out one first and open, idle ones under "Older branc
   assert.deepEqual([main.collapsibleState, main.description], [State.Expanded, 'current · 1 session']);
   assert.equal(pay.collapsibleState, State.Collapsed);
   assert.match(pay.description, /^2 sessions · just now$/);
-  assert.equal((await tree.resolveTreeItem(pay)).tooltip, 'feature/pay\n2 sessions, last handoff just now\nUsage: 2.0k tokens · $0.04 · <1m active');
+  assert.equal((await tree.resolveTreeItem(pay)).tooltip, 'feature/pay\n2 sessions, last handoff just now\nUsage: 2.0k tokens · $0.04 at API prices · <1m active');
   assert.deepEqual(labels(await tree.getChildren(pay)), ['Payment tests', 'Payments']);
   assert.deepEqual(labels(await tree.getChildren(older)), ['spike/import']);
   assert.equal(usage.command.command, 'carrycontext.usageReport');
@@ -96,7 +96,7 @@ test('one row per session opens its latest handoff; earlier versions are inside;
   assert.match(hover, /\*\*Goal:\*\* Build the payments page/);
   assert.match(hover, /\*\*Working on:\*\* Add tests for checkout/);
   assert.match(hover, /\*\*Next steps:\*\*\n\n- Continue from the most recent request/);
-  assert.match(hover, /\*\*Usage:\*\* 2\.0k tokens · \$0\.04\n/);
+  assert.match(hover, /\*\*Usage:\*\* 2\.0k tokens · \$0\.04 at API prices\n/);
   assert.match(hover, /1 earlier version · ~\//);
   assert.ok(!hover.includes(env.home), 'no home folder path in the hover text');
 });

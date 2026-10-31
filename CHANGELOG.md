@@ -9,6 +9,11 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 - **A handoff could tell the next assistant to fix a test that never failed.** "npm test" written inside a heredoc, a quoted string or a file being edited counted as a test run, so an unrelated failing command became "❌ Fix the failing test". Only commands that actually run are checked now, and Node's test runner is recognized however it's started (`node --test`, `"$NODE" --test`).
 - **Key decisions** no longer include questions or remarks that happen to contain "don't" ("how do I…?", "I don't have any yet"). Entries an earlier version picked this way are removed on the next save; decisions from an LLM summarizer or written by hand are kept as written.
 - Handoffs were named after replies like "yes it looks right" or "that works for me".
+- **Usage by branch** put work under "(no branch recorded)" when Claude Code logged `HEAD` instead of a branch, as it does for the whole of a session started before the folder became a git repo. That work now goes to the branch checked out at the time, read from git's own record of branch switches (`.git/logs/HEAD`) without running git.
+
+### Changed
+
+- Cost in usage stats now says **at API prices** in the panel and the report: on a Claude subscription it's what the same work would cost through the API, not what you pay.
 
 ## [0.6.0] - 2026-10-30
 

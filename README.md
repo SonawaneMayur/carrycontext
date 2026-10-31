@@ -47,7 +47,7 @@ The CarryContext icon in the Activity Bar opens a panel:
 - **Latest handoff:** what every assistant reads now, with its ✅/⚠️/❌ verification counts.
 - **One folder per branch,** the checked-out one first and open. Inside it, **one row per session**: its title, what it was working on, and when. Hover for the goal, next steps and verification; click to open it. Earlier versions are inside the row.
 - **Older branches:** branches with no handoff for 2 weeks, folded away.
-- **Usage:** opens the usage report. Hover a branch or session for its tokens, active time and cost.
+- **Usage:** opens the usage report. Hover a branch or session for its tokens, active time and cost at API prices.
 - **Recent conversations:** each assistant's newest sessions; click one to create a handoff from it.
 
 At the top: **Find Handoff** (🔍), **Compact All**, **Switch To Provider**, a filter that shows only the current branch, and refresh.

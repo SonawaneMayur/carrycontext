@@ -172,7 +172,7 @@ function usageItem(showCost) {
   const item = new vscode.TreeItem('Usage');
   item.id = 'usage';
   item.description = showCost ? 'tokens, models, time, cost' : 'tokens, models, time';
-  item.tooltip = 'Tokens, models, active time and estimated cost by branch, session and question, from the logs on this computer. Nothing is sent anywhere.';
+  item.tooltip = 'Tokens, models, active time and cost at API prices by branch, session and question, from the logs on this computer. Nothing is sent anywhere.';
   item.iconPath = new vscode.ThemeIcon('graph');
   item.command = { command: 'carrycontext.usageReport', title: 'Show Usage Report' };
   return item;

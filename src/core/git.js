@@ -36,6 +36,32 @@ function currentBranch(cwd) {
   return ref ? ref[1] : `detached-${head.slice(0, 7)}`;
 }
 
+/**
+ * Which branch was checked out at a given time, for work an assistant logged on "HEAD" (a session
+ * started before `git init` keeps logging it). Read from the reflog's "checkout: moving from A to B"
+ * lines in .git/logs/HEAD, without running git: the branch last switched to; before the first
+ * switch, the one it left; with no switches, the current branch. Undefined for a detached
+ * checkout or outside git.
+ * @param {string} cwd
+ * @returns {(ms: number) => string | undefined}
+ */
+function branchAt(cwd) {
+  const dir = gitDir(cwd);
+  if (!dir) return () => undefined;
+  const branch = (name) => (name && !/^[0-9a-f]{7,40}$/.test(name) && !name.startsWith('detached-') ? name : undefined);
+  const current = branch(currentBranch(cwd));
+  const moves = [];
+  for (const line of (readText(path.join(dir, 'logs', 'HEAD')) || '').split('\n')) {
+    const m = line.match(/ (\d+) [+-]\d{4}\tcheckout: moving from (\S+) to (\S+)$/);
+    if (m) moves.push({ at: Number(m[1]) * 1000, from: m[2], to: m[3] });
+  }
+  return (ms) => {
+    const before = moves.filter((m) => m.at <= ms).pop();
+    if (before) return branch(before.to);
+    return moves.length ? branch(moves[0].from) : current;
+  };
+}
+
 /** Folder-safe branch name. Keep in sync with the sed expression in claudeHooks.js. */
 const branchSlug = (branch) => branch.replace(/\//g, '__').replace(/[^A-Za-z0-9._-]/g, '-');
 
@@ -173,4 +199,4 @@ function repoState(cwd, view = gitView(cwd)) {
   return `_Read from git when this handoff was written. Check it again before relying on it._\n\n${lines.join('\n')}`;
 }
 
-module.exports = { gitDir, headFile, currentBranch, branchSlug, gitAvailable, gitView, repoState };
+module.exports = { gitDir, headFile, currentBranch, branchAt, branchSlug, gitAvailable, gitView, repoState };

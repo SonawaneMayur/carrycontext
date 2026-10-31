@@ -14,6 +14,26 @@ test('currentBranch is null outside git', () => {
   assert.equal(g.currentBranch(env.project()), null);
 });
 
+test('branchAt reads branch switches from the reflog file, without running git', () => {
+  const cwd = env.project();
+  const line = (sec, message) => `${'0'.repeat(40)} ${'1'.repeat(40)} A U Thor <author@example.com> ${sec} -0500\t${message}`;
+  fs.mkdirSync(path.join(cwd, '.git', 'logs'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, '.git', 'HEAD'), 'ref: refs/heads/feature\n');
+  fs.writeFileSync(
+    path.join(cwd, '.git', 'logs', 'HEAD'),
+    [line(1000, 'commit (initial): First'), line(2000, 'checkout: moving from main to feature'), line(3000, 'checkout: moving from feature to 1a2b3c4d5e'), line(4000, 'checkout: moving from 1a2b3c4d5e to feature')].join('\n') + '\n',
+  );
+  const at = g.branchAt(cwd);
+  assert.equal(at(500 * 1000), 'main', 'before the first switch, even before the first commit: the branch it left');
+  assert.equal(at(2500 * 1000), 'feature');
+  assert.equal(at(3500 * 1000), undefined, 'a detached checkout');
+  assert.equal(at(5000 * 1000), 'feature');
+
+  fs.writeFileSync(path.join(cwd, '.git', 'logs', 'HEAD'), line(1000, 'commit (initial): First') + '\n');
+  assert.equal(g.branchAt(cwd)(0), 'feature', 'no switches: the current branch');
+  assert.equal(g.branchAt(env.project())(0), undefined, 'outside git');
+});
+
 test('currentBranch reads branches with slashes, from subfolders too', { skip }, () => {
   const repo = env.project({ git: true });
   git(repo, 'checkout', '-q', '-b', 'feature/payments');

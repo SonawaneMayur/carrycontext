@@ -14,9 +14,10 @@ const { readJson, writeFile } = require('./util');
 const { sanitize } = require('./sanitize');
 const { isSubstantive } = require('./summarize');
 const { ensureGitignore } = require('./handoff');
+const { gitDir, branchAt } = require('./git');
 const { getProvider } = require('../providers');
 
-const VERSION = 1;
+const VERSION = 2; // 2: work logged on "HEAD" goes to the branch checked out at the time
 const IDLE_MS = 5 * 60000; // longer gaps between replies don't count as active time
 const QUESTIONS_KEPT = 20; // per session
 
@@ -106,7 +107,7 @@ function sessionUsage(adapter, ref, prices, ctx) {
   let first;
   let last;
   for (const r of records) {
-    const branch = r.branch || '';
+    const branch = r.branch || ctx.branchAt(Date.parse(r.ts || '')) || '';
     const day = (r.ts || '').slice(0, 10);
     const cost = replyCost(r, prices);
     const reply = { replies: 1, input: r.input, output: r.output, cacheRead: r.cacheRead, cacheWrite: r.cacheWrite5m + r.cacheWrite1h, cost: cost ?? 0, unpriced: cost === null ? 1 : 0 };
@@ -155,9 +156,15 @@ function stat(file) {
 async function usageSummary(cwd, config) {
   const file = path.join(dataDir(cwd), 'usage.json');
   const prices = config.usage?.prices || {};
-  const ctx = { cwd, redact: config.redact };
-  // Cached totals are only valid for the prices and redaction settings they were made with.
-  const stamp = crypto.createHash('sha256').update(JSON.stringify([VERSION, LIST_PRICES, LONG_PROMPT, prices, config.redact])).digest('hex').slice(0, 16);
+  let branches; // the reflog is read only if a session needs recounting
+  const ctx = { cwd, redact: config.redact, branchAt: (ms) => (branches ||= branchAt(cwd))(ms) };
+  // Cached totals are only valid for the prices and redaction settings they were made with, and
+  // a folder that became a git repo can now name the branch of work logged on "HEAD".
+  const stamp = crypto
+    .createHash('sha256')
+    .update(JSON.stringify([VERSION, LIST_PRICES, LONG_PROMPT, prices, config.redact, Boolean(gitDir(cwd))]))
+    .digest('hex')
+    .slice(0, 16);
   const cache = readJson(file, null);
   const cached = cache?.stamp === stamp ? cache.sessions || {} : {};
   const sessions = {};
@@ -238,11 +245,13 @@ const short = (n) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n /
 const duration = (ms) => (ms < 60000 ? '<1m' : ms < 3600000 ? `${Math.round(ms / 60000)}m` : `${Math.floor(ms / 3600000)}h ${Math.round((ms % 3600000) / 60000)}m`);
 /** "$4.10", "$4.10+" when some replies had no price, "no price" when none had one. */
 const money = (c) => (c.unpriced === c.replies ? 'no price' : `$${c.cost.toFixed(2)}${c.unpriced ? '+' : ''}`);
+/** money(), saying what the figure is, since on a subscription it isn't what you pay: "$4.10 at API prices". */
+const atApiPrices = (c) => (c.unpriced === c.replies ? money(c) : `${money(c)} at API prices`);
 const branchName = (name) => name || '(no branch recorded)';
 
-/** One line, e.g. "1.2M tokens · $4.10 · 2h 10m active", for tooltips. */
+/** One line, e.g. "1.2M tokens · $4.10 at API prices · 2h 10m active", for tooltips. */
 function describe(c, showCost) {
-  return [`${short(tokens(c))} tokens`, showCost && money(c), c.active !== undefined && `${duration(c.active)} active`].filter(Boolean).join(' · ');
+  return [`${short(tokens(c))} tokens`, showCost && atApiPrices(c), c.active !== undefined && `${duration(c.active)} active`].filter(Boolean).join(' · ');
 }
 
 /** Usage of one session on one branch, for the panel; key is "provider:id8" as in the catalog. */
@@ -264,13 +273,13 @@ function renderReport(s, project) {
   const table = (head, rows) =>
     [`| ${head.join(' | ')} |`, `|${head.map((h) => (TEXT.includes(h) ? '---' : '---:')).join('|')}|`, ...rows.map((r) => `| ${r.map(cell).join(' | ')} |`)].join('\n');
   const cost = (c) => (s.showCost ? [money(c)] : []);
-  const costHead = s.showCost ? ['Cost'] : [];
+  const costHead = s.showCost ? ['At API prices'] : [];
   const day = (ms) => (Number.isFinite(ms) && ms > 0 ? new Date(ms).toISOString().slice(0, 10) : '');
   const out = [`# Usage · ${project}`, ''];
   out.push(
     `From the assistants' logs on this computer; nothing was sent anywhere.${
       s.showCost
-        ? ` Costs are estimates at Anthropic API list prices (as of ${s.asOf}). On a Claude subscription you don't pay per token, so read them as what the same work would cost through the API.`
+        ? ` Costs are what this work would cost through Anthropic's API at list prices (as of ${s.asOf}), not what you pay: a Claude subscription doesn't charge per token.`
         : ''
     }`,
     '',
@@ -279,7 +288,7 @@ function renderReport(s, project) {
     out.push('No usage found for this folder yet.');
   } else {
     out.push(
-      `**${s.total.replies} repl${s.total.replies === 1 ? 'y' : 'ies'} · ${short(tokens(s.total))} tokens${s.showCost ? ` · ${money(s.total)}` : ''} · ${duration(s.total.active)} active** (${day(s.total.first)} to ${day(s.total.last)})`,
+      `**${s.total.replies} repl${s.total.replies === 1 ? 'y' : 'ies'} · ${short(tokens(s.total))} tokens${s.showCost ? ` · ${atApiPrices(s.total)}` : ''} · ${duration(s.total.active)} active** (${day(s.total.first)} to ${day(s.total.last)})`,
       '',
       '## By branch',
       '',

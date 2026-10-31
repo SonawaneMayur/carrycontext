@@ -69,6 +69,19 @@ test('Claude: each reply counts once, sub-agents count, "HEAD" stays on the bran
   );
 });
 
+test('work logged on "HEAD" goes to the branch checked out at the time, read from the reflog', async () => {
+  const cwd = env.project();
+  // A repo written by hand, so the test needs no git: on main until 10:00, then feature/pay.
+  fs.mkdirSync(path.join(cwd, '.git', 'logs'), { recursive: true });
+  fs.writeFileSync(path.join(cwd, '.git', 'HEAD'), 'ref: refs/heads/feature/pay\n');
+  const switched = Date.parse('2026-10-30T10:00:00Z') / 1000;
+  fs.writeFileSync(path.join(cwd, '.git', 'logs', 'HEAD'), `${'0'.repeat(40)} ${'1'.repeat(40)} A U Thor <author@example.com> ${switched} +0000\tcheckout: moving from main to feature/pay\n`);
+  const head = { branch: 'HEAD' }; // what Claude Code logs for a session started before `git init`
+  writeLog(projectLogs(cwd), 's', [ask('Start the app', '2026-10-30T09:00:00Z', 'HEAD'), reply(usage(100), '2026-10-30T09:00:10Z', head), reply(usage(200), '2026-10-30T11:00:00Z', head)]);
+  const s = await usageSummary(cwd, config());
+  assert.deepEqual(s.branches.map((b) => [b.name, b.replies]).sort(), [['feature/pay', 1], ['main', 1]]);
+});
+
 test('cost at list prices: cache reads and writes, fast mode, long Haiku prompts, unknown models, your own prices', () => {
   const r = (model, { input = 0, output = 0, cacheRead = 0, w5 = 0, w1 = 0, fast = false } = {}) => ({ model, input, output, cacheRead, cacheWrite5m: w5, cacheWrite1h: w1, fast });
   const M = 1e6;
@@ -124,9 +137,9 @@ test('summary: by branch, session, model, day and question; breaks are not activ
   assert.doesNotMatch(renderCsv(hidden), /estimated_cost_usd/);
 
   // The panel's figures.
-  assert.equal(describe(s.branches[0], true), '314.0k tokens · $0.22 · 3m active');
+  assert.equal(describe(s.branches[0], true), '314.0k tokens · $0.22 at API prices · 3m active');
   assert.equal(describe(s.branches[1], false), '1.1k tokens · <1m active');
-  assert.equal(describe({ ...s.branches[1], active: undefined }, true), '1.1k tokens · $0.01+', '"+": some replies had no price');
+  assert.equal(describe({ ...s.branches[1], active: undefined }, true), '1.1k tokens · $0.01+ at API prices', '"+": some replies had no price');
   const a = s.sessions[1];
   assert.equal(sessionOnBranch(s, `claude:${a.id.slice(0, 8)}`, 'feature/pay').replies, 3);
   assert.equal(sessionOnBranch(s, `claude:${a.id.slice(0, 8)}`, 'nope'), null);
