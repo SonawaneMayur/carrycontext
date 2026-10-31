@@ -4,6 +4,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-10-30
+
 ### Fixed
 
 - **A handoff could tell the next assistant to fix a test that never failed.** "npm test" written inside a heredoc, a quoted string or a file being edited counted as a test run, so an unrelated failing command became "❌ Fix the failing test". Only commands that actually run are checked now, and Node's test runner is recognized however it's started (`node --test`, `"$NODE" --test`).
@@ -122,7 +124,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.4.2...v0.5.0
 [0.4.2]: https://github.com/SonawaneMayur/carrycontext/compare/v0.4.1...v0.4.2
