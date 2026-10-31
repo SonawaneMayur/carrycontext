@@ -275,7 +275,7 @@ test/                      node:test suites; test/helpers/ has the sandbox, sess
 
 - Codex and Gemini transcript formats aren't documented and change between versions. Their readers are best-effort and tested against synthetic sessions in their known formats. Claude Code's reader was also tested against real transcripts.
 - The panel (`src/sidebar.js`) is tested against a stand-in for the VS Code API. The rest of the VS Code glue (`src/extension.js`) isn't covered by automated tests yet; everything it calls is.
-- `.carrycontext/.gitignore` excludes `handoff.md`, `handoffs/`, the inbox, state, usage and logs. The provider copies (`.claude/handoff.md`, `.codex/handoff.md`, ...) are outside that folder and not ignored. Handoffs can contain anything from your conversations, so check them before committing.
+- `.carrycontext/.gitignore` excludes `handoff.md`, `handoffs/`, the inbox, state, usage and logs. In a git repo, the provider copies (`.claude/handoff.md`, `.codex/handoff.md`, ...) are added to `.git/info/exclude`, git's local ignore list, which is never committed and leaves your `.gitignore` alone. A copy you committed before stays tracked until you run `git rm --cached` on it. The Copilot target also writes the handoff into `.github/copilot-instructions.md`, which is your file and not ignored. Handoffs can contain anything from your conversations, so check that file before committing.
 
 ## Author
 

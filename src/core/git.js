@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
-const { readText } = require('./util');
+const { readText, writeFile } = require('./util');
 
 /** The .git directory for cwd or any parent, following worktree "gitdir:" files. */
 function gitDir(cwd) {
@@ -88,6 +88,25 @@ function gitAvailable() {
     available = run('git', ['--version']);
   }
   return available;
+}
+
+/**
+ * Keep files out of git through the repo's local exclude list (.git/info/exclude). It is never
+ * committed, so the user's own .gitignore stays untouched. Does nothing outside a repo.
+ * @param {string} cwd
+ * @param {string[]} files absolute paths of existing files inside the repo
+ */
+function excludeLocally(cwd, files) {
+  const out = files.length ? git(cwd, ['rev-parse', '--show-toplevel', '--git-path', 'info/exclude']) : null;
+  if (!out) return;
+  const [root, excludePath] = out.split('\n');
+  const exclude = path.resolve(cwd, excludePath);
+  const existing = readText(exclude) || '';
+  const lines = existing.split('\n').map((l) => l.trim());
+  // Anchored at the repo root. realpath: git reports the root with symlinks resolved.
+  const entries = files.map((f) => '/' + path.relative(root, fs.realpathSync(f)).split(path.sep).join('/'));
+  const missing = [...new Set(entries)].filter((e) => !lines.includes(e));
+  if (missing.length) writeFile(exclude, `${existing}${existing && !existing.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`);
 }
 
 function git(cwd, args) {
@@ -204,4 +223,4 @@ function repoState(cwd, view = gitView(cwd)) {
   return `_Read from git when this handoff was written. Check it again before relying on it._\n\n${lines.join('\n')}`;
 }
 
-module.exports = { gitDir, headFile, currentBranch, branchAt, contains, branchSlug, gitAvailable, gitView, repoState };
+module.exports = { gitDir, headFile, currentBranch, branchAt, contains, branchSlug, gitAvailable, gitView, repoState, excludeLocally };

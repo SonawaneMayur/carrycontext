@@ -4,6 +4,10 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Fixed
+
+- **Handoff copies stay out of git.** The copies written for each assistant (`.claude/handoff.md`, `.codex/handoff.md`, `.gemini/handoff.md`, and Copilot's and Cursor's) hold conversation text but were not ignored, so `git add .` would commit them. In a git repo they are now added to `.git/info/exclude`, git's local ignore list, which is never committed and leaves your `.gitignore` alone.
+
 ## [0.6.2] - 2026-10-31
 
 ### Added

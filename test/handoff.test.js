@@ -102,6 +102,25 @@ test('per-branch: new branches inherit, switching restores, split sessions go to
   assert.deepEqual([...new Set(h.listSavedHandoffs(cwd).map((s) => s.branch))].sort(), ['feature__pay', 'main']);
 });
 
+test('in git: provider copies are kept out of git through .git/info/exclude, once each', { skip: !hasGit && 'git missing' }, async () => {
+  const cwd = env.project({ git: true });
+  fs.writeFileSync(path.join(cwd, '.gitignore'), 'node_modules/\n');
+  git(cwd, 'add', '.');
+  git(cwd, 'commit', '-q', '-m', 'Ignore deps');
+  writeClaude(cwd, 's', standardConversation(cwd));
+  const cfg = config({ targets: ['claude', 'codex', 'gemini', 'copilot', 'cursor'] });
+  await compact(cwd, cfg);
+  await compact(cwd, cfg);
+
+  const copies = ['.claude/handoff.md', '.codex/handoff.md', '.gemini/handoff.md', '.github/handoff.md', '.cursor/rules/handoff.mdc'];
+  const exclude = read(path.join(cwd, '.git', 'info', 'exclude'));
+  for (const copy of copies) assert.equal(exclude.split('\n').filter((l) => l === `/${copy}`).length, 1, copy);
+  const untracked = git(cwd, 'status', '--porcelain', '--untracked-files=all');
+  for (const copy of copies) assert.ok(!untracked.includes(copy), `${copy} is not offered to git`);
+  assert.match(untracked, /AGENTS\.md/, 'instruction files are left to the user');
+  assert.equal(read(path.join(cwd, '.gitignore')), 'node_modules/\n', "the user's .gitignore is untouched");
+});
+
 test('per-branch: switching back to main from a feature branch starts empty, not from the feature', { skip: !hasGit && 'git missing' }, async () => {
   const cwd = env.project({ git: true });
   h.activateBranch(cwd, config()); // on main, nothing saved yet

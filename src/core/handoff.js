@@ -13,7 +13,7 @@ const { sanitize } = require('./sanitize');
 const { listSaved, pruneHistory } = require('./catalog');
 const { SECTIONS, parseSections, heuristicSections, llmSections, shortText, mergeDecisions } = require('./summarize');
 const { verifyClaims, countClaims, renderClaims, summaryLine } = require('./claims');
-const { currentBranch, branchAt, contains, branchSlug, gitView, repoState } = require('./git');
+const { currentBranch, branchAt, contains, branchSlug, gitView, repoState, excludeLocally } = require('./git');
 const { getProvider, listProviders } = require('../providers');
 const { getLlm } = require('../llm');
 
@@ -368,7 +368,7 @@ function saveHandoff(cwd, doc, config, branch, fileName) {
   return sessionFile;
 }
 
-/** Copy the canonical handoff into each target provider's location. */
+/** Copy the canonical handoff into each target provider's location, keeping the copies out of git. */
 function syncTargets(cwd, config, doc = readText(paths(cwd).handoff)) {
   if (!doc) return [];
   const written = [];
@@ -382,6 +382,7 @@ function syncTargets(cwd, config, doc = readText(paths(cwd).handoff)) {
       upsertManagedBlock(target.instructionsFile(cwd), target.inline ? doc : pointerBlock(rel(cwd, file)));
     }
   }
+  excludeLocally(cwd, written);
   return written;
 }
 
