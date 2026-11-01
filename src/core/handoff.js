@@ -10,14 +10,14 @@ const crypto = require('crypto');
 const { dataDir } = require('./config');
 const { writeFile, readText, readJson, mtime, upsertManagedBlock, rel } = require('./util');
 const { sanitize } = require('./sanitize');
-const { listSaved, pruneHistory } = require('./catalog');
+const { listSaved, catalog, pruneHistory } = require('./catalog');
 const { SECTIONS, parseSections, heuristicSections, llmSections, shortText, mergeDecisions } = require('./summarize');
 const { verifyClaims, countClaims, renderClaims, summaryLine } = require('./claims');
 const { currentBranch, branchAt, contains, branchSlug, gitView, repoState, excludeLocally } = require('./git');
 const { getProvider, listProviders } = require('../providers');
 const { getLlm } = require('../llm');
 
-const RENDER_ORDER = ['Goal', 'Background', 'Current state', 'Verification', 'Recent requests', 'Key decisions', 'Files & code', 'Repository state', 'Commands run', 'Open tasks', 'Next steps', 'Gotchas'];
+const RENDER_ORDER = ['Goal', 'Background', 'Current state', 'Other recent sessions', 'Verification', 'Recent requests', 'Key decisions', 'Files & code', 'Repository state', 'Commands run', 'Open tasks', 'Next steps', 'Gotchas'];
 
 function paths(cwd) {
   const dir = dataDir(cwd);
@@ -185,6 +185,9 @@ async function writeBranchHandoff({ cwd, branch, current, messages, sessions, so
     mergeDecisions(prev['Key decisions'], sections['Key decisions'], tag) ||
     '_None recorded yet. Decisions come from an LLM summary, /compact-all, or rule-like statements in your messages ("always…", "don\'t…")._';
 
+  // Other sessions on this branch stay visible, so this save can't hide their work.
+  sections['Other recent sessions'] = otherSessions(cwd, branch, sources, config);
+
   const session = sessionName(sessions, messages);
   const description = shortText(sections['Short description'] || sections.Goal || '', 8) || 'handoff';
   delete sections['Short description'];
@@ -305,6 +308,38 @@ function ownFiles(cwd) {
   }
   return files;
 }
+
+const OTHER_SESSIONS = 5;
+
+/**
+ * The branch's other sessions saved within the lookback window, newest first: one line each
+ * with a link to its full handoff, so the newest save doesn't hide earlier work on the branch.
+ */
+function otherSessions(cwd, branch, sources, config) {
+  const slug = branch ? branchSlug(branch) : null;
+  const key = sources.map((s) => `${s.provider}:${s.id.slice(0, 8)}`).join('+');
+  const since = Date.now() - config.lookbackHours * 3600000;
+  const sessions = catalog(cwd).find((b) => b.slug === slug)?.sessions || [];
+  return sessions
+    .filter((s) => s.key !== key && s.at >= since)
+    .slice(0, OTHER_SESSIONS)
+    .map((s) => {
+      const text = readText(s.file) || '';
+      const msgs = [...text.split(/\n## /)[0].matchAll(/\((\d+) msgs\)/g)].reduce((n, m) => n + Number(m[1]), 0);
+      const state = stoppedAt(parseSections(text)['Current state']);
+      const when = `${new Date(s.at).toISOString().slice(0, 16).replace('T', ' ')} UTC`;
+      return [`- **${s.title}**`, clip(s.description, 80), `${msgs} msgs`, when, state && `stopped at: "${state}"`, `\`${rel(cwd, s.file)}\``].filter(Boolean).join(' · ');
+    })
+    .join('\n');
+}
+
+/** The first line of a Current state section, without the heuristic's "Last assistant update" lead-in. */
+function stoppedAt(state = '') {
+  const lines = state.split('\n').map((l) => l.replace(/^>\s?/, '').replace(/\*\*/g, '').trim());
+  return clip(lines.find((l) => l && !/^Last assistant update\b/.test(l)) || '', 120);
+}
+
+const clip = (text, max) => (text.length > max ? `${text.slice(0, max).trimEnd()}…` : text);
 
 /** Claude's session title, else the first prompt; "compact-all" when sessions are merged. */
 function sessionName(sessions, messages) {

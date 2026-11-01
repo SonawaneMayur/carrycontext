@@ -36,6 +36,32 @@ test('outside git: writes the handoff, a named copy, provider copies and pointer
   assert.match(read(path.join(cwd, '.carrycontext', '.gitignore')), /handoffs\//);
 });
 
+test('other recent sessions on the branch are listed, one line each with a link', async () => {
+  const cwd = env.project();
+  const save = (id, ask, reply, cfg = config()) => {
+    const file = writeClaude(cwd, id, [{ role: 'user', text: ask }, { role: 'assistant', text: reply }]);
+    return h.updateHandoff({ cwd, sessions: [claudeSession(file)], trigger: 't', config: cfg, getApiKey: noKey });
+  };
+  const others = (res) => (res.doc.split('## Other recent sessions\n\n')[1] || '').split('\n\n')[0];
+
+  const pay = await save('pay-0001', 'Build the payments page', '**Payments page** is done and tested.');
+  assert.equal(others(pay), '', 'nothing else saved yet: no section');
+  const ask = await save('ask-0002', 'What exactly is a handoff?', 'A briefing note.');
+  assert.match(others(ask), /^- \*\*Build the payments page\*\* · Build the payments page · 2 msgs · \d{4}-\d\d-\d\d \d\d:\d\d UTC · stopped at: "Payments page is done and tested\." · `\.carrycontext\/handoffs\/claude-build-the-payments-page--[\w-]+\.md`$/);
+  assert.doesNotMatch(others(ask), /handoff\?/, 'the session being saved is not listed');
+
+  const again = await save('pay-0001', 'Build the payments page', 'Added refunds.');
+  assert.equal(others(again).split('\n').length, 1);
+  assert.match(others(again), /^- \*\*What exactly is a handoff\?\*\*/, 'a session is listed once, by its latest save');
+
+  const old = Date.now() / 1000 - 48 * 3600; // outside the 24h lookback
+  for (const f of h.listSavedHandoffs(cwd)) fs.utimesSync(f.file, old, old);
+  assert.equal(others(await save('pay-0001', 'Build the payments page', 'Done.')), '', 'old sessions are left out');
+
+  for (let i = 0; i < 7; i++) await save(`cap${i}-000`, `Task number ${i}`, 'ok');
+  assert.equal(others(await save('last-000', 'Last task', 'ok')).split('\n').length, 5, 'at most 5 are listed');
+});
+
 test('compact-all merges sessions from several providers in time order', async () => {
   const cwd = env.project();
   writeClaude(cwd, 'c', [{ role: 'user', text: 'Claude task', ts: '2026-10-25T09:00:00Z' }]);

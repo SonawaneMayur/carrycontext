@@ -4,6 +4,10 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- **Other sessions on a branch stay visible.** A branch's handoff showed only the session saved last, so a short side question could replace a long working session as the branch's context. The handoff now lists up to 5 other sessions saved on the branch within `lookbackHours`, one line each with where it stopped and a link to its full handoff.
+
 ### Fixed
 
 - **Handoff copies stay out of git.** The copies written for each assistant (`.claude/handoff.md`, `.codex/handoff.md`, `.gemini/handoff.md`, and Copilot's and Cursor's) hold conversation text but were not ignored, so `git add .` would commit them. In a git repo they are now added to `.git/info/exclude`, git's local ignore list, which is never committed and leaves your `.gitignore` alone.
