@@ -4,6 +4,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.6.3] - 2026-11-01
+
 ### Added
 
 - **Other sessions on a branch stay visible.** A branch's handoff showed only the session saved last, so a short side question could replace a long working session as the branch's context. The handoff now lists up to 5 other sessions saved on the branch within `lookbackHours`, one line each with where it stopped and a link to its full handoff.
@@ -143,7 +145,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.2...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.5.0...v0.6.0
