@@ -4,6 +4,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-11-01
+
 ### Added
 
 - **See what a fresh start saves.** Hovering a session in the panel now shows its handoff's size next to what continuing that session re-sends with every message, for example "~2.1k tokens, vs ~197.0k per message to continue the session". It's measured from the session's own log: the prompt size of its last reply, sub-agents left out. A handoff over 4k tokens is flagged, since the next session reads it with every message.
@@ -149,7 +151,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.3...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.0...v0.6.1
