@@ -17,9 +17,10 @@ const { ensureGitignore } = require('./handoff');
 const { gitDir, branchAt } = require('./git');
 const { getProvider } = require('../providers');
 
-const VERSION = 2; // 2: work logged on "HEAD" goes to the branch checked out at the time
+const VERSION = 3; // 2: work logged on "HEAD" goes to the branch checked out at the time; 3: context size
 const IDLE_MS = 5 * 60000; // longer gaps between replies don't count as active time
 const QUESTIONS_KEPT = 20; // per session
+const BIG_HANDOFF = 4000; // tokens; the next session reads the handoff with every message
 
 /** When the built-in prices were taken from Anthropic's published API list prices. */
 const PRICES_AS_OF = '2026-10';
@@ -49,7 +50,7 @@ const LONG_PROMPT = { 'claude-haiku-5-5': { over: 100000, rates: [0.5, 2.5, 0.05
  * @typedef {{replies: number, input: number, output: number, cacheRead: number, cacheWrite: number, cost: number, unpriced: number}} Counts
  * @typedef {Counts & {branch: string, model: string, day: string}} Row
  * @typedef {Counts & {name: string, sessions: number, active: number}} Group
- * @typedef {Counts & {provider: string, id: string, title: string, first?: number, last?: number, active: number, branches: string[], models: string[], rows: Row[]}} SessionUsage
+ * @typedef {Counts & {provider: string, id: string, title: string, first?: number, last?: number, active: number, branches: string[], models: string[], rows: Row[], context: Record<string, number>}} SessionUsage
  * @typedef {{text: string, session: string, branch: string, ts?: string, tokens: number, cost: number}} Question
  */
 
@@ -101,6 +102,8 @@ function sessionUsage(adapter, ref, prices, ctx) {
   const rows = new Map();
   /** @type {Record<string, number>} */
   const active = {};
+  /** @type {Record<string, number>} */
+  const context = {}; // per branch: what each message re-sent at the end
   const lastAt = {};
   const asked = new Map();
   let topic = '';
@@ -114,6 +117,8 @@ function sessionUsage(adapter, ref, prices, ctx) {
     const key = `${branch}\t${r.model}\t${day}`;
     if (!rows.has(key)) rows.set(key, { branch, model: r.model, day, ...counts() });
     add(/** @type {Row} */ (rows.get(key)), reply);
+    // The prompt of the branch's last main-thread reply: what continuing the session re-sends per message.
+    if (!r.subagent) context[branch] = r.input + r.cacheRead + r.cacheWrite5m + r.cacheWrite1h;
     const at = Date.parse(r.ts || '');
     if (at) {
       first = Math.min(first ?? at, at);
@@ -135,7 +140,7 @@ function sessionUsage(adapter, ref, prices, ctx) {
     .sort(([, a], [, b]) => b.cost - a.cost || b.tokens - a.tokens)
     .slice(0, QUESTIONS_KEPT)
     .map(([text, q]) => ({ text: clean(text, 120), ...q }));
-  return { provider: ref.provider, id: ref.id, title: clean(title || ref.id.slice(0, 8), 80), first, last, rows: [...rows.values()], active, questions };
+  return { provider: ref.provider, id: ref.id, title: clean(title || ref.id.slice(0, 8), 80), first, last, rows: [...rows.values()], active, context, questions };
 }
 
 function stat(file) {
@@ -221,7 +226,7 @@ function summarize(sessions, config, notIncluded) {
     const onBranches = [...new Set(s.rows.map((r) => r.branch))];
     for (const b of onBranches) group(branches, b).sessions++;
     for (const m of new Set(s.rows.map((r) => r.model))) group(models, m).sessions++;
-    list.push({ ...mine, provider: s.provider, id: s.id, title: s.title, first: s.first, last: s.last, branches: onBranches, models: [...new Set(s.rows.map((r) => r.model))], rows: s.rows });
+    list.push({ ...mine, provider: s.provider, id: s.id, title: s.title, first: s.first, last: s.last, branches: onBranches, models: [...new Set(s.rows.map((r) => r.model))], rows: s.rows, context: s.context || {} });
     questions.push(...s.questions.map((q) => ({ ...q, session: s.title })));
   }
   const costly = (a, b) => b.cost - a.cost || tokens(b) - tokens(a);
@@ -258,7 +263,23 @@ function describe(c, showCost) {
 function sessionOnBranch(summary, key, branch) {
   const s = summary.sessions.find((x) => key.split('+').includes(`${x.provider}:${x.id.slice(0, 8)}`));
   const rows = s?.rows.filter((r) => r.branch === branch) || [];
-  return rows.length ? rows.reduce((c, r) => add(c, r), counts()) : null;
+  return rows.length ? { ...rows.reduce((c, r) => add(c, r), counts()), context: s?.context[branch] } : null;
+}
+
+/** Rough token count, about 4 characters a token. */
+const estimateTokens = (text) => Math.ceil(text.length / 4);
+
+/**
+ * A handoff's size next to what continuing its session re-sent per message, e.g. "~2.2k tokens,
+ * vs ~313.0k per message to continue the session". The gap is what starting fresh saves on every
+ * message. A large handoff is flagged, since the next session reads it with every message.
+ * @param {string} text  the handoff
+ * @param {number} [context]  the session's last prompt size on the handoff's branch
+ */
+function handoffSize(text, context = 0) {
+  const n = estimateTokens(text);
+  const line = [`~${short(n)} tokens`, context > n && `vs ~${short(context)} per message to continue the session`].filter(Boolean).join(', ');
+  return n > BIG_HANDOFF ? `${line}. Large: the next session reads it with every message` : line;
 }
 
 /**
@@ -344,4 +365,4 @@ function renderCsv(s) {
   return lines.join('\n') + '\n';
 }
 
-module.exports = { PRICES_AS_OF, replyCost, usageSummary, renderReport, renderCsv, describe, sessionOnBranch };
+module.exports = { PRICES_AS_OF, replyCost, usageSummary, renderReport, renderCsv, describe, sessionOnBranch, handoffSize };

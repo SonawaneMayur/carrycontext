@@ -97,6 +97,7 @@ test('one row per session opens its latest handoff; earlier versions are inside;
   assert.match(hover, /\*\*Working on:\*\* Add tests for checkout/);
   assert.match(hover, /\*\*Next steps:\*\*\n\n- Continue from the most recent request/);
   assert.match(hover, /\*\*Usage:\*\* 2\.0k tokens · \$0\.04 at API prices\n/);
+  assert.match(hover, /\*\*Handoff:\*\* ~[\d.]+k? tokens/, "the handoff's size");
   assert.match(hover, /1 earlier version · ~\//);
   assert.ok(!hover.includes(env.home), 'no home folder path in the hover text');
 });

@@ -6,7 +6,7 @@ const vscode = require('vscode');
 const fs = require('fs');
 const { paths, loadState } = require('./core/handoff');
 const { catalog } = require('./core/catalog');
-const { usageSummary, describe, sessionOnBranch } = require('./core/usage');
+const { usageSummary, describe, sessionOnBranch, handoffSize } = require('./core/usage');
 const { currentBranch, branchSlug } = require('./core/git');
 const { parseSections } = require('./core/summarize');
 const { getProvider } = require('./providers');
@@ -71,7 +71,7 @@ class HandoffTree {
     const { branch, session } = item;
     if (session) {
       const used = summary && sessionOnBranch(summary, session.key, branch.name);
-      item.tooltip = sessionTooltip(session, branch, used ? describe(used, showCost) : '');
+      item.tooltip = sessionTooltip(session, branch, used ? describe(used, showCost) : '', used?.context);
     } else {
       const used = summary?.branches.find((b) => b.name === branch.name);
       item.tooltip = [String(item.label), `${count(branch)}, last handoff ${ago(branch.at)}`, used && `Usage: ${describe(used, showCost)}`].filter(Boolean).join('\n');
@@ -220,9 +220,11 @@ function opens(item, file) {
  * @param {Session} session
  * @param {Branch} branch
  * @param {string} usage   e.g. "1.2M tokens · $4.10", or '' when unknown
+ * @param {number} [context]  what continuing the session re-sent per message, in tokens
  */
-function sessionTooltip(session, branch, usage) {
-  const next = (parseSections(readText(session.file) || '')['Next steps'] || '').split('\n').filter((l) => l.trim()).slice(0, 5);
+function sessionTooltip(session, branch, usage, context) {
+  const text = readText(session.file) || '';
+  const next = (parseSections(text)['Next steps'] || '').split('\n').filter((l) => l.trim()).slice(0, 5);
   const v = session.verification;
   const earlier = session.versions.length - 1;
   const md = new vscode.MarkdownString();
@@ -233,6 +235,7 @@ function sessionTooltip(session, branch, usage) {
   if (next.length) md.appendMarkdown(`\n\n**Next steps:**\n\n${next.join('\n')}`);
   if (v) md.appendMarkdown(`\n\n✅ ${v.verified} verified · ⚠️ ${v.unverified} unverified · ❌ ${v.contradicted} contradicted`);
   if (usage) md.appendMarkdown('\n\n**Usage:** ').appendText(usage);
+  if (text) md.appendMarkdown('\n\n**Handoff:** ').appendText(handoffSize(text, context));
   md.appendMarkdown('\n\n').appendText(`${earlier ? `${earlier} earlier version${earlier === 1 ? '' : 's'} · ` : ''}${tildify(session.file)}`);
   return md;
 }

@@ -9,7 +9,7 @@ const { FAKE_SECRETS } = require('./helpers/fakeSecrets');
 
 const env = sandbox();
 const { DEFAULTS, normalizeConfig } = require('../src/core/config');
-const { usageSummary, renderReport, renderCsv, replyCost, describe, sessionOnBranch } = require('../src/core/usage');
+const { usageSummary, renderReport, renderCsv, replyCost, describe, sessionOnBranch, handoffSize } = require('../src/core/usage');
 const { getProvider } = require('../src/providers');
 test.after(() => env.cleanup());
 
@@ -82,6 +82,24 @@ test('work logged on "HEAD" goes to the branch checked out at the time, read fro
   assert.deepEqual(s.branches.map((b) => [b.name, b.replies]).sort(), [['feature/pay', 1], ['main', 1]]);
 });
 
+test('context per message comes from the main conversation, not sub-agents', async () => {
+  const cwd = env.project();
+  writeLog(projectLogs(cwd), 'c', [
+    ask('Refactor the cart', '2026-10-30T10:00:00Z'),
+    reply(usage(10, { cacheRead: 200000 }), '2026-10-30T10:00:10Z'),
+    reply(usage(10, { cacheRead: 5000 }), '2026-10-30T10:00:20Z', { sidechain: true }), // a sub-agent's own small context
+  ]);
+  const s = await usageSummary(cwd, config());
+  assert.equal(sessionOnBranch(s, 'claude:c', 'main').context, 200000);
+});
+
+test('handoff size: next to what continuing the session re-sent per message; large ones flagged', () => {
+  assert.equal(handoffSize('x'.repeat(8800), 313000), '~2.2k tokens, vs ~313.0k per message to continue the session');
+  assert.equal(handoffSize('x'.repeat(400)), '~100 tokens', 'no usage known');
+  assert.equal(handoffSize('x'.repeat(400), 50), '~100 tokens', 'a session smaller than its handoff');
+  assert.equal(handoffSize('x'.repeat(20000), 900000), '~5.0k tokens, vs ~900.0k per message to continue the session. Large: the next session reads it with every message');
+});
+
 test('cost at list prices: cache reads and writes, fast mode, long Haiku prompts, unknown models, your own prices', () => {
   const r = (model, { input = 0, output = 0, cacheRead = 0, w5 = 0, w1 = 0, fast = false } = {}) => ({ model, input, output, cacheRead, cacheWrite5m: w5, cacheWrite1h: w1, fast });
   const M = 1e6;
@@ -142,6 +160,7 @@ test('summary: by branch, session, model, day and question; breaks are not activ
   assert.equal(describe({ ...s.branches[1], active: undefined }, true), '1.1k tokens · $0.01+ at API prices', '"+": some replies had no price');
   const a = s.sessions[1];
   assert.equal(sessionOnBranch(s, `claude:${a.id.slice(0, 8)}`, 'feature/pay').replies, 3);
+  assert.equal(sessionOnBranch(s, `claude:${a.id.slice(0, 8)}`, 'feature/pay').context, 100000, "the branch's last reply re-sent 100k tokens");
   assert.equal(sessionOnBranch(s, `claude:${a.id.slice(0, 8)}`, 'nope'), null);
 });
 
