@@ -13,7 +13,7 @@ const { sanitize } = require('./sanitize');
 const { listSaved, catalog, pruneHistory } = require('./catalog');
 const { SECTIONS, parseSections, heuristicSections, llmSections, shortText, mergeDecisions } = require('./summarize');
 const { verifyClaims, countClaims, renderClaims, summaryLine } = require('./claims');
-const { currentBranch, branchAt, contains, branchSlug, gitView, repoState, excludeLocally } = require('./git');
+const { currentBranch, branchAt, contains, isTracked, branchSlug, gitView, repoState, excludeLocally, includeLocally } = require('./git');
 const { getProvider, listProviders } = require('../providers');
 const { getLlm } = require('../llm');
 
@@ -407,6 +407,8 @@ function saveHandoff(cwd, doc, config, branch, fileName) {
 function syncTargets(cwd, config, doc = readText(paths(cwd).handoff)) {
   if (!doc) return [];
   const written = [];
+  const hidden = [];
+  const shown = [];
   for (const id of config.targets) {
     const target = getProvider(id)?.target;
     if (!target) continue;
@@ -414,12 +416,22 @@ function syncTargets(cwd, config, doc = readText(paths(cwd).handoff)) {
     writeFile(file, target.render ? target.render(doc) : doc);
     written.push(file);
     if (target.instructionsFile) {
-      upsertManagedBlock(target.instructionsFile(cwd), target.inline ? doc : pointerBlock(rel(cwd, file)));
+      const instructions = target.instructionsFile(cwd);
+      // The whole handoff goes inline (Copilot) only into a file CarryContext alone writes, which
+      // then stays out of git like the copies. A file you or your team keep (in git, or with your
+      // own text) gets a pointer instead, so no conversation text lands in a commit.
+      const inline = target.inline && !isTracked(cwd, instructions) && !hasOtherText(readText(instructions));
+      upsertManagedBlock(instructions, inline ? doc : pointerBlock(rel(cwd, file)));
+      if (target.inline) (inline ? hidden : shown).push(instructions);
     }
   }
-  excludeLocally(cwd, written);
+  excludeLocally(cwd, [...written, ...hidden]);
+  includeLocally(cwd, shown);
   return written;
 }
+
+/** Whether a file has text besides CarryContext's managed block. */
+const hasOtherText = (text) => Boolean(text && text.replace(/<!-- carrycontext:start -->[\s\S]*?<!-- carrycontext:end -->/, '').trim());
 
 const pointerBlock = (file) => `## Handoff from a previous AI session
 Before starting work, read \`${file}\`. CarryContext wrote it from an earlier session, which may have been run by a different AI assistant.

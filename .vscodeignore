@@ -6,3 +6,4 @@ test/**
 CONTRIBUTING.md
 scripts/**
 .gitignore
+docs/**

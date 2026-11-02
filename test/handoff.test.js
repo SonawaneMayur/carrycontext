@@ -147,6 +147,45 @@ test('in git: provider copies are kept out of git through .git/info/exclude, onc
   assert.equal(read(path.join(cwd, '.gitignore')), 'node_modules/\n', "the user's .gitignore is untouched");
 });
 
+const SECRET_DOC = '<!-- carrycontext:handoff v1 -->\n# Handoff: app\n\n## Goal\n\nShip the secret plan\n';
+const copilotOnly = () => ({ ...config(), targets: ['copilot'] });
+
+test("Copilot: the whole handoff only in a file CarryContext alone writes, kept out of git; once it's yours, a pointer", { skip: !hasGit && 'git missing' }, () => {
+  const cwd = env.project({ git: true });
+  const instructions = path.join(cwd, '.github', 'copilot-instructions.md');
+  const changes = () => git(cwd, 'status', '--porcelain', '--untracked-files=all');
+
+  h.syncTargets(cwd, copilotOnly(), SECRET_DOC);
+  assert.match(read(instructions), /Ship the secret plan/, 'inline, since Copilot Ask mode cannot open files');
+  assert.equal(changes(), '', 'neither .github file would be committed');
+
+  // You add your own text: it's your file now, so it gets a pointer and shows up in git again.
+  fs.appendFileSync(instructions, '\nUse tabs.\n');
+  h.syncTargets(cwd, copilotOnly(), SECRET_DOC);
+  const text = read(instructions);
+  assert.match(text, /Use tabs\./);
+  assert.match(text, /read `\.github\/handoff\.md`/);
+  assert.doesNotMatch(text, /Ship the secret plan/);
+  assert.match(changes(), /\.github\/copilot-instructions\.md/, 'visible to git, so your text gets committed');
+  assert.doesNotMatch(changes(), /handoff\.md/, 'the handoff copy stays out of git');
+});
+
+test('Copilot: a team instructions file in git gets only a pointer, never the conversation', { skip: !hasGit && 'git missing' }, () => {
+  const cwd = env.project({ git: true });
+  const instructions = path.join(cwd, '.github', 'copilot-instructions.md');
+  fs.mkdirSync(path.dirname(instructions), { recursive: true });
+  fs.writeFileSync(instructions, 'Team rules: write tests.\n');
+  git(cwd, 'add', '.');
+  git(cwd, 'commit', '-q', '-m', 'Team Copilot rules');
+
+  h.syncTargets(cwd, copilotOnly(), SECRET_DOC);
+  const text = read(instructions);
+  assert.match(text, /Team rules: write tests\./);
+  assert.match(text, /read `\.github\/handoff\.md`/);
+  assert.doesNotMatch(text, /Ship the secret plan/);
+  assert.match(read(path.join(cwd, '.github', 'handoff.md')), /Ship the secret plan/, 'the copy it points to has the handoff');
+});
+
 test('per-branch: switching back to main from a feature branch starts empty, not from the feature', { skip: !hasGit && 'git missing' }, async () => {
   const cwd = env.project({ git: true });
   h.activateBranch(cwd, config()); // on main, nothing saved yet

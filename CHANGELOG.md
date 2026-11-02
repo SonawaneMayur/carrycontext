@@ -4,6 +4,14 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Fixed
+
+- **Copilot's instructions file could put your conversation in a commit.** For Copilot, the whole handoff goes into `.github/copilot-instructions.md`, since Copilot's Ask mode can't open other files. 0.6.3 kept the other handoff copies out of git but not this file, so `git add .` would commit it (0.6.3's notes said Copilot's copy was covered; only `.github/handoff.md` was). Now the file holds the whole handoff only while CarryContext alone writes it, and it's kept out of git like the copies. A file you or your team keep (it's in git, or has your own text) gets a short pointer to `.github/handoff.md` instead, which Copilot's Agent mode follows. If you switched to Copilot before, check whether that file was committed.
+
+### Changed
+
+- README: a 7-step demo GIF and a screenshot of a fact-checked handoff, and installing from the VS Code Marketplace is now the first option.
+
 ## [0.7.0] - 2026-11-01
 
 ### Added

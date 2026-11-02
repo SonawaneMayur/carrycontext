@@ -97,16 +97,31 @@ function gitAvailable() {
  * @param {string[]} files absolute paths of existing files inside the repo
  */
 function excludeLocally(cwd, files) {
+  const list = localExcludes(cwd, files);
+  if (!list) return;
+  const lines = list.existing.split('\n').map((l) => l.trim());
+  const missing = list.entries.filter((e) => !lines.includes(e));
+  if (missing.length) writeFile(list.file, `${list.existing}${list.existing && !list.existing.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`);
+}
+
+/** Undo excludeLocally, for files that should show up in git again (e.g. ones you've since added text to). */
+function includeLocally(cwd, files) {
+  const list = localExcludes(cwd, files);
+  if (!list?.existing) return;
+  const lines = list.existing.split('\n');
+  const kept = lines.filter((l) => !list.entries.includes(l.trim()));
+  if (kept.length !== lines.length) writeFile(list.file, kept.join('\n'));
+}
+
+/** The local exclude file and the entries for `files` in it, or null outside a repo. */
+function localExcludes(cwd, files) {
   const out = files.length ? git(cwd, ['rev-parse', '--show-toplevel', '--git-path', 'info/exclude']) : null;
-  if (!out) return;
+  if (!out) return null;
   const [root, excludePath] = out.split('\n');
-  const exclude = path.resolve(cwd, excludePath);
-  const existing = readText(exclude) || '';
-  const lines = existing.split('\n').map((l) => l.trim());
+  const file = path.resolve(cwd, excludePath);
   // Anchored at the repo root. realpath: git reports the root with symlinks resolved.
-  const entries = files.map((f) => '/' + path.relative(root, fs.realpathSync(f)).split(path.sep).join('/'));
-  const missing = [...new Set(entries)].filter((e) => !lines.includes(e));
-  if (missing.length) writeFile(exclude, `${existing}${existing && !existing.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`);
+  const entries = [...new Set(files.map((f) => '/' + path.relative(root, fs.realpathSync(f)).split(path.sep).join('/')))];
+  return { file, existing: readText(file) || '', entries };
 }
 
 function git(cwd, args) {
@@ -128,6 +143,11 @@ function baseBranch(cwd, branch) {
 /** Whether the checked-out commit includes `branch`'s latest commit, as a branch made from it does. */
 function contains(cwd, branch) {
   return gitAvailable() && git(cwd, ['merge-base', '--is-ancestor', `refs/heads/${branch}`, 'HEAD']) !== null;
+}
+
+/** Whether git tracks the file, so your changes to it get committed. False outside a repo. */
+function isTracked(cwd, file) {
+  return gitAvailable() && git(cwd, ['ls-files', '--error-unmatch', '--', file]) !== null;
 }
 
 const STATUS_LABELS = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'copied', '??': 'untracked' };
@@ -223,4 +243,4 @@ function repoState(cwd, view = gitView(cwd)) {
   return `_Read from git when this handoff was written. Check it again before relying on it._\n\n${lines.join('\n')}`;
 }
 
-module.exports = { gitDir, headFile, currentBranch, branchAt, contains, branchSlug, gitAvailable, gitView, repoState, excludeLocally };
+module.exports = { gitDir, headFile, currentBranch, branchAt, contains, isTracked, branchSlug, gitAvailable, gitView, repoState, excludeLocally, includeLocally };

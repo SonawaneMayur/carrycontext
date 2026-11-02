@@ -11,11 +11,17 @@ By **[Mayur Sonawane](https://github.com/SonawaneMayur)** · [GitHub repo](https
 
 Compact your AI coding sessions into one portable `handoff.md`, then pick up the work in a new session or in another provider's assistant (Claude Code, Codex, Gemini CLI, Copilot, Cursor, or any chat via the clipboard).
 
+![CarryContext in 7 steps: Claude Code finds a failing test, /compact writes a fact-checked handoff, Copilot picks it up and fixes the bug, and each branch keeps its own handoff](https://raw.githubusercontent.com/SonawaneMayur/carrycontext/main/docs/media/demo.gif)
+
 ## Install
 
+In VS Code, open the Extensions view (`Cmd+Shift+X` / `Ctrl+Shift+X`), search for **CarryContext** and click **Install**, or open it on the [VS Code Marketplace](https://marketplace.visualstudio.com/items?itemName=sonawanemayur.carrycontext). The rocket icon appears in the Activity Bar.
+
+**Or from a release file:**
+
 1. Download `carrycontext-<version>.vsix` from the [latest release](https://github.com/SonawaneMayur/carrycontext/releases/latest).
-2. In VS Code, open the Extensions view (`Cmd+Shift+X` / `Ctrl+Shift+X`), click **…** at the top, choose **Install from VSIX…** and pick the file.
-3. Reload the window. The rocket icon appears in the Activity Bar.
+2. In the Extensions view, click **…** at the top, choose **Install from VSIX…** and pick the file.
+3. Reload the window.
 
 From a terminal: `code --install-extension carrycontext-<version>.vsix`. To check the download, compare `shasum -a 256 carrycontext-<version>.vsix` with `SHA256SUMS.txt` from the same release.
 
@@ -125,6 +131,8 @@ The **Key decisions** section only grows. Each handoff adds new decisions to the
 ## Verified handoffs
 
 A summary can be wrong: a session may say it edited a file it never wrote, or that tests pass when the last run failed. Every handoff checks what the session claims against git and the session's own recorded results, and says what it found:
+
+![Claude Code reports a failing test; the handoff it leaves marks the failure ❌ and makes fixing it the first next step](https://raw.githubusercontent.com/SonawaneMayur/carrycontext/main/docs/media/verified-handoff.png)
 
 ```
 - **Verification:** 36 verified, 4 unverified, 0 contradicted
