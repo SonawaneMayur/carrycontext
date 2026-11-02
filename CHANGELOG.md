@@ -4,6 +4,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-11-02
+
 ### Fixed
 
 - **Copilot's instructions file could put your conversation in a commit.** For Copilot, the whole handoff goes into `.github/copilot-instructions.md`, since Copilot's Ask mode can't open other files. 0.6.3 kept the other handoff copies out of git but not this file, so `git add .` would commit it (0.6.3's notes said Copilot's copy was covered; only `.github/handoff.md` was). Now the file holds the whole handoff only while CarryContext alone writes it, and it's kept out of git like the copies. A file you or your team keep (it's in git, or has your own text) gets a short pointer to `.github/handoff.md` instead, which Copilot's Agent mode follows. If you switched to Copilot before, check whether that file was committed.
@@ -159,7 +161,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.2...v0.6.3
 [0.6.2]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.1...v0.6.2
