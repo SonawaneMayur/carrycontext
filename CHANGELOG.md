@@ -4,6 +4,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-08
+
 ### Added
 
 - **Usage by feature:** a feature is the story ID in a branch name, so `feature/24114362` and `bugfix/24114362-x` count together (a branch without one is its own feature). Each feature shows its tokens and cost per LLM, active time, the span from first to last activity, and energy. The per-branch figures stay.
@@ -199,7 +201,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.3...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.0...v0.7.1
