@@ -280,6 +280,18 @@
           "default": true,
           "description": "Show estimated cost in usage stats, at Anthropic API list prices. On a Claude subscription you don't pay per token, so the figure is what the same work would cost through the API. Token counts are always shown."
         },
+        "carrycontext.usage.machineWatts": {
+          "type": "number",
+          "default": 15,
+          "minimum": 1,
+          "description": "Your computer's average power draw while you develop, in watts, used to estimate the electricity each feature took (active AI time × watts). Only your machine is counted: the AI's data-center energy isn't published per request."
+        },
+        "carrycontext.usage.electricityPrice": {
+          "type": "number",
+          "default": 0,
+          "minimum": 0,
+          "description": "What you pay per kWh. When set, usage stats also show the electricity cost of each feature. 0 hides it."
+        },
         "carrycontext.usage.prices": {
           "type": "object",
           "default": {},

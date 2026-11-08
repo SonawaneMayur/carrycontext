@@ -15,7 +15,7 @@ const { readJson, writeFile } = require('./util');
  * @property {{enabled: boolean, idleSeconds: number}} autoUpdate
  * @property {{enabled: boolean, extraPatterns: string[]}} redact   secret redaction (see src/security/secrets.js)
  * @property {{enabled: boolean}} verify   check the session's claims against git and recorded results
- * @property {{showCost: boolean, prices: Record<string, Price>}} usage   token stats (see src/core/usage.js)
+ * @property {{showCost: boolean, prices: Record<string, Price>, machineWatts: number, electricityPrice: number}} usage   token stats (see src/core/usage.js)
  *
  * $ per million tokens for one model. Cache writes default to 1.25x input (5-minute) and 2x (1-hour).
  * @typedef {{input: number, output: number, cacheRead: number, cacheWrite5m?: number, cacheWrite1h?: number}} Price
@@ -32,7 +32,7 @@ const DEFAULTS = {
   autoUpdate: { enabled: true, idleSeconds: 120 },
   redact: { enabled: true, extraPatterns: [] },
   verify: { enabled: true },
-  usage: { showCost: true, prices: {} },
+  usage: { showCost: true, prices: {}, machineWatts: 15, electricityPrice: 0 },
 };
 
 /**
@@ -81,7 +81,12 @@ function normalizeConfig(raw) {
     },
     redact: { enabled: c.redact?.enabled !== false, extraPatterns: strings(c.redact?.extraPatterns, []) },
     verify: { enabled: c.verify?.enabled !== false },
-    usage: { showCost: c.usage?.showCost !== false, prices: prices(c.usage?.prices) },
+    usage: {
+      showCost: c.usage?.showCost !== false,
+      prices: prices(c.usage?.prices),
+      machineWatts: clamp(c.usage?.machineWatts, 1, 5000, DEFAULTS.usage.machineWatts),
+      electricityPrice: clamp(c.usage?.electricityPrice, 0, 100, DEFAULTS.usage.electricityPrice),
+    },
   };
 }
 

@@ -4,6 +4,22 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- **Usage by feature:** a feature is the story ID in a branch name, so `feature/24114362` and `bugfix/24114362-x` count together (a branch without one is its own feature). Each feature shows its tokens and cost per LLM, active time, the span from first to last activity, and energy. The per-branch figures stay.
+- **Codex usage:** tokens per reply from Codex's own logs, each reply counted once, the cached part as cache reads. OpenAI models have no built-in price; set yours in `carrycontext.usage.prices`.
+- **Electricity:** your machine's energy during active AI time, estimated with `carrycontext.usage.machineWatts` (default 15 W), and its cost when you set `carrycontext.usage.electricityPrice`. The AI's data-center energy isn't included: it isn't published per request.
+- **Machine:** the report and CSV name the computer by model and chip, never by its name.
+
+### Changed
+
+- **Usage keeps its history.** A session whose log is gone keeps the totals it was recorded with, so a feature's cost stays complete after Claude Code deletes old logs (about 30 days by default). Delete `.carrycontext/usage.json` to start over.
+- The CSV export has two new columns, `feature` and `machine`.
+
+### Fixed
+
+- A question asked of a model without a price showed $0.00 in "Most expensive questions"; it now says "no price".
+
 ## [0.7.3] - 2026-11-08
 
 ### Added

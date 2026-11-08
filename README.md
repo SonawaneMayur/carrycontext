@@ -62,16 +62,19 @@ At the top: **Find Handoff** (🔍), **Compact All**, **Switch To Provider**, a 
 
 ## Usage stats
 
-**Usage** in the panel (or **CarryContext: Show Usage Report**) shows what your AI work used, by branch, session, model, day and question: replies, tokens, active time and estimated cost. Your branches are usually features or stories, so a branch's total is roughly what that feature cost to build.
+**Usage** in the panel (or **CarryContext: Show Usage Report**) shows what your AI work used, by feature, branch, session, model, day and question: replies, tokens, active time, estimated cost and electricity. Your branches are usually features or stories, so a branch's total is roughly what that feature cost to build.
 
-- **Local only.** Everything comes from Claude Code's own logs on your computer (`~/.claude/projects`). Nothing is sent anywhere, and prices come from a table built into CarryContext, never from the internet.
+- **By feature.** A feature is the story ID in a branch name, so `feature/24114362` and `bugfix/24114362-x` count together; a branch without one is its own feature. Each feature shows its tokens and cost **per LLM**, active time, the span from first to last activity, and energy. The per-branch figures stay too.
+- **Local only.** Everything comes from the assistants' own logs on your computer (Claude Code's `~/.claude/projects`, Codex's `~/.codex/sessions`). Nothing is sent anywhere, and prices come from a table built into CarryContext, never from the internet.
 - **Exact token counts.** Each reply counts once (Claude Code logs one reply as several lines), sub-agents included.
 - **Estimated cost** at Anthropic API list prices (built in, as of October 2026). On a Claude subscription you don't pay per token, so read it as what the same work would cost through the API. Models without a built-in price show "no price": add them, or your own rates, in `carrycontext.usage.prices`, or hide cost with `carrycontext.usage.showCost`.
 - **Active time** adds up the gaps between replies and skips breaks longer than 5 minutes.
 - **Questions:** a request's cost includes the replies that follow it, and a reply like "sure" counts toward the request before it.
-- **Export:** **Export Usage as CSV…** writes one row per session, branch, model and day. Text a spreadsheet would run as a formula is neutralized.
-- **Fast:** totals per session are cached in `.carrycontext/usage.json` (git-ignored, no paths) and recomputed only when a log changes.
-- **Not included yet:** Codex and Gemini CLI. Copilot and Cursor keep no usage logs on your computer.
+- **Electricity:** your machine's, during active AI time: active time × `carrycontext.usage.machineWatts` (default 15 W, a typical laptop while you develop). Set `carrycontext.usage.electricityPrice` (per kWh) to see what it cost. The AI's own data-center energy isn't included: it isn't published per request.
+- **Machine:** the report names the computer by model and chip ("Mac17,7 · Apple M5 Max · 18 cores"), never by its name, which often contains yours.
+- **Export:** **Export Usage as CSV…** writes one row per session, branch, model and day, with the feature and machine. Text a spreadsheet would run as a formula is neutralized.
+- **A ledger that keeps up.** Totals per session are kept in `.carrycontext/usage.json` (git-ignored, no paths) and recomputed only when a log changes. A session whose log is gone keeps the totals it was recorded with, so a feature's cost stays complete even after Claude Code deletes old logs (after about 30 days by default). Delete the file to start over.
+- **Other LLMs:** Codex usage is included; OpenAI models have no built-in price, so set yours in `carrycontext.usage.prices`. Not included yet: Gemini CLI. Copilot and Cursor keep no usage logs on your computer.
 
 ## Where the handoff goes
 

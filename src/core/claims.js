@@ -5,6 +5,7 @@
 const fs = require('fs');
 const path = require('path');
 const { EDIT_TOOLS, SHELL_TOOLS } = require('./summarize');
+const { storyId, isDate } = require('./git');
 
 /**
  * @typedef {'verified'|'unverified'|'contradicted'} ClaimStatus
@@ -158,23 +159,6 @@ const checkers = [
     },
   },
 ];
-
-const isDate = (digits) => /^(19|20)\d\d(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/.test(digits);
-
-/**
- * The story or ticket ID in a branch name, with a pattern for IDs of the same kind: a Jira-style
- * key (ABC-123, matching other ABC- keys) or a number of 5+ digits (matching numbers of the same
- * length). Numbers that read as dates (20261107) aren't IDs.
- * @param {string | null | undefined} branch
- */
-function storyId(branch) {
-  const key = (branch || '').match(/(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9]{1,9})-(\d+)(?![A-Za-z0-9])/);
-  if (key) return { id: `${key[1].toUpperCase()}-${key[2]}`, key: key[1].toUpperCase(), pattern: new RegExp(`(?<![A-Za-z0-9])${key[1]}-(\\d+)(?![A-Za-z0-9])`, 'gi') };
-  for (const m of (branch || '').matchAll(/(?<![A-Za-z0-9])\d{5,}(?![A-Za-z0-9])/g)) {
-    if (!isDate(m[0])) return { id: m[0], key: '', pattern: new RegExp(`(?<![A-Za-z0-9])\\d{${m[0].length}}(?![A-Za-z0-9])`, 'g') };
-  }
-  return null;
-}
 
 /** IDs of the same kind as the branch's in a message. */
 function storyIds(text, own) {

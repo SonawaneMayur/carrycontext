@@ -62,6 +62,23 @@ function branchAt(cwd) {
   };
 }
 
+const isDate = (digits) => /^(19|20)\d\d(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/.test(digits);
+
+/**
+ * The story or ticket ID in a branch name, with a pattern for IDs of the same kind: a Jira-style
+ * key (ABC-123, matching other ABC- keys) or a number of 5+ digits (matching numbers of the same
+ * length). Numbers that read as dates (20261107) aren't IDs. Branches with the same ID are one feature.
+ * @param {string | null | undefined} branch
+ */
+function storyId(branch) {
+  const key = (branch || '').match(/(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9]{1,9})-(\d+)(?![A-Za-z0-9])/);
+  if (key) return { id: `${key[1].toUpperCase()}-${key[2]}`, key: key[1].toUpperCase(), pattern: new RegExp(`(?<![A-Za-z0-9])${key[1]}-(\\d+)(?![A-Za-z0-9])`, 'gi') };
+  for (const m of (branch || '').matchAll(/(?<![A-Za-z0-9])\d{5,}(?![A-Za-z0-9])/g)) {
+    if (!isDate(m[0])) return { id: m[0], key: '', pattern: new RegExp(`(?<![A-Za-z0-9])\\d{${m[0].length}}(?![A-Za-z0-9])`, 'g') };
+  }
+  return null;
+}
+
 /** Folder-safe branch name. Keep in sync with the sed expression in claudeHooks.js. */
 const branchSlug = (branch) => branch.replace(/\//g, '__').replace(/[^A-Za-z0-9._-]/g, '-');
 
@@ -249,4 +266,4 @@ function repoState(cwd, view = gitView(cwd)) {
   return `_Read from git when this handoff was written. Check it again before relying on it._\n\n${lines.join('\n')}`;
 }
 
-module.exports = { gitDir, headFile, currentBranch, branchAt, contains, isTracked, localBranches, branchSlug, gitAvailable, gitView, repoState, excludeLocally, includeLocally };
+module.exports = { gitDir, headFile, currentBranch, branchAt, contains, isTracked, localBranches, storyId, isDate, branchSlug, gitAvailable, gitView, repoState, excludeLocally, includeLocally };

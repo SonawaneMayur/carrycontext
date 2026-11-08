@@ -21,7 +21,7 @@ test('usage prints the report, or CSV with --csv', () => {
   const usage = { input_tokens: 0, output_tokens: 2000, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 };
   writeClaude(cwd, 'u', [{ role: 'user', text: 'Profile the slow endpoint', branch: 'main' }, { role: 'assistant', text: 'Done', branch: 'main', usage }]);
   assert.match(run('usage', '--cwd', cwd), /^# Usage · project-\d+\n[\s\S]*\*\*1 reply · 2\.0k tokens · \$0\.04/);
-  assert.match(run('usage', '--csv', '--cwd', cwd), /^provider,session_id,session,branch,model,day,replies,[\s\S]*\nclaude,u,Profile the slow endpoint,main,claude-opus-5-5,/);
+  assert.match(run('usage', '--csv', '--cwd', cwd), /^provider,session_id,session,feature,branch,model,day,machine,replies,[\s\S]*\nclaude,u,Profile the slow endpoint,main,main,claude-opus-5-5,/);
 });
 
 test('compact-all, show, prompt and sync work end to end', () => {

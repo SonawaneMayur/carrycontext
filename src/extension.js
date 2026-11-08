@@ -57,7 +57,12 @@ function activate(context) {
       autoUpdate: { enabled: c.get('autoUpdate.enabled', true), idleSeconds: c.get('autoUpdate.idleSeconds') },
       redact: { enabled: user('redact.enabled', true), extraPatterns: user('redact.extraPatterns', []) },
       verify: { enabled: c.get('verify.enabled', true) },
-      usage: { showCost: c.get('usage.showCost', true), prices: c.get('usage.prices', {}) },
+      usage: {
+        showCost: c.get('usage.showCost', true),
+        prices: c.get('usage.prices', {}),
+        machineWatts: c.get('usage.machineWatts', 15),
+        electricityPrice: c.get('usage.electricityPrice', 0),
+      },
     });
   };
 

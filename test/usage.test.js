@@ -100,6 +100,92 @@ test('handoff size: next to what continuing the session re-sent per message; lar
   assert.equal(handoffSize('x'.repeat(20000), 900000), '~5.0k tokens, vs ~900.0k per message to continue the session. Large: the next session reads it with every message');
 });
 
+/** A Codex log in today's folder, where Codex keeps its recent sessions. */
+function writeRollout(id, lines) {
+  const d = new Date();
+  const dir = path.join(process.env.CODEX_HOME, 'sessions', String(d.getFullYear()), String(d.getMonth() + 1).padStart(2, '0'), String(d.getDate()).padStart(2, '0'));
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, `rollout-${id}.jsonl`);
+  fs.writeFileSync(file, lines.map((l, i) => JSON.stringify({ timestamp: new Date(Date.parse('2026-11-05T10:00:00Z') + i * 60000).toISOString(), ...l })).join('\n') + '\n');
+  return file;
+}
+const codexUsage = (response_id, input, cached, output) => ({ type: 'token_usage_record', payload: { response_id, usage: { input_tokens: input, cached_input_tokens: cached, cache_write_input_tokens: 0, output_tokens: output, total_tokens: input + output } } });
+
+test('Codex: tokens per reply from its log, each reply once, the cached part as cache reads', () => {
+  const cwd = env.project();
+  const file = writeRollout('cx', [
+    { type: 'session_meta', payload: { id: 'cx', cwd, git: { branch: 'feature/24114362' } } },
+    { type: 'turn_context', payload: { model: 'gpt-6-luna' } },
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>noise</environment_context>' }] } },
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Add the Outlook export' }] } },
+    codexUsage('r1', 17886, 11776, 341),
+    codexUsage('r1', 17886, 11776, 341), // the same response logged twice
+    codexUsage('r2', 20000, 18000, 500),
+  ]);
+  const { title, records } = getProvider('codex').readUsage({ provider: 'codex', id: 'cx', path: file, updatedAt: 0 });
+  assert.equal(title, 'Add the Outlook export');
+  assert.deepEqual(
+    records.map((r) => [r.model, r.branch, r.question, r.input, r.cacheRead, r.output]),
+    [
+      ['gpt-6-luna', 'feature/24114362', 'Add the Outlook export', 6110, 11776, 341],
+      ['gpt-6-luna', 'feature/24114362', 'Add the Outlook export', 2000, 18000, 500],
+    ],
+  );
+});
+
+test('features: branches for one story count together, with tokens and cost per LLM, active time, span and energy', async () => {
+  const cwd = env.project();
+  const story = { branch: 'feature/24114362' };
+  const fix = { branch: 'bugfix/24114362-export', model: 'claude-sonnet-5-5' };
+  writeLog(projectLogs(cwd), 'f1', [
+    ask('Build the Outlook export', '2026-11-01T09:00:00Z', story.branch),
+    reply(usage(1000), '2026-11-01T09:00:30Z', story),
+    reply(usage(1000), '2026-11-01T09:02:30Z', story), // 2 minutes active
+  ]);
+  writeLog(projectLogs(cwd), 'f2', [
+    ask('Fix the export bug', '2026-11-03T10:00:00Z', fix.branch),
+    reply(usage(500), '2026-11-03T10:00:20Z', fix),
+    reply(usage(500), '2026-11-03T10:04:20Z', fix), // 4 minutes active
+  ]);
+  writeLog(projectLogs(cwd), 'o', [ask('Tidy the README', '2026-11-02T08:00:00Z'), reply(usage(100), '2026-11-02T08:00:10Z')]);
+  writeRollout('cx2', [
+    { type: 'session_meta', payload: { id: 'cx2', cwd, git: { branch: 'feature/24114362' } } },
+    { type: 'turn_context', payload: { model: 'gpt-6-luna' } },
+    { type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Review the export' }] } },
+    codexUsage('r9', 3000, 0, 200),
+  ]);
+
+  const s = await usageSummary(cwd, config({ usage: { machineWatts: 60, electricityPrice: 10 } }));
+  const f = s.features.find((x) => x.name === '24114362');
+  assert.deepEqual(f.branches, ['bugfix/24114362-export', 'feature/24114362']);
+  assert.equal(f.sessions, 3, 'two Claude chats and one Codex chat');
+  assert.deepEqual(f.models.map((m) => m.name), ['claude-opus-5-5', 'claude-sonnet-5-5', 'gpt-6-luna'], 'costliest first; Codex has no built-in price');
+  assert.equal(f.models[2].unpriced, 1);
+  assert.equal(f.active, 6 * 60000);
+  assert.deepEqual([f.first, f.last], ['2026-11-01', '2026-11-05']);
+  near(f.kwh, (6 / 60) * 60 / 1000); // 6 minutes at 60 W
+  assert.ok(s.features.some((x) => x.name === 'main'), 'a branch without a story ID is its own feature');
+
+  const md = renderReport(s, 'app');
+  assert.match(md, /^Machine: .+ · \d+ cores$/m);
+  assert.match(md, /\| 24114362 \| bugfix\/24114362-export, feature\/24114362 \| claude-opus-5-5 \| [\d.]+k \| \$0\.04 \| 6m \| 2026-11-01 → 2026-11-05 \| 6\.0 Wh · \$0\.06 \|/);
+  assert.match(md, /\|  \|  \| gpt-6-luna \| 3\.2k \| no price \|  \|  \|  \|/);
+  assert.match(md, /\|  \|  \| all LLMs \| [\d.]+k \| \$0\.05\+ \|  \|  \|  \|/);
+  assert.match(md, /\| no price \| 3\.2k \| Review the export \|/, 'a question with no price says so');
+  assert.match(md, /estimated at 60 W .*priced at \$10\/kWh\. The AI's own data-center energy isn't included/);
+  assert.match(renderCsv(s), /,24114362,bugfix\/24114362-export,claude-sonnet-5-5,2026-11-03,"[^"]+ cores",/);
+});
+
+test("a chat whose log is gone keeps the totals it was recorded with, even after a price change", async () => {
+  const cwd = env.project();
+  const file = writeLog(projectLogs(cwd), 'old', [ask('Build search', '2026-10-01T09:00:00Z'), reply(usage(1000), '2026-10-01T09:00:30Z')]);
+  assert.equal((await usageSummary(cwd, config())).total.replies, 1);
+  fs.rmSync(file); // Claude Code deletes logs after about 30 days
+  const s = await usageSummary(cwd, config({ usage: { prices: JSON.parse('{"claude-opus-5-5": {"input": 1, "output": 1}}') } }));
+  assert.equal(s.total.replies, 1);
+  near(s.total.cost, 0.02); // 1,000 output tokens at the list price when it was recorded
+});
+
 test('cost at list prices: cache reads and writes, fast mode, long Haiku prompts, unknown models, your own prices', () => {
   const r = (model, { input = 0, output = 0, cacheRead = 0, w5 = 0, w1 = 0, fast = false } = {}) => ({ model, input, output, cacheRead, cacheWrite5m: w5, cacheWrite1h: w1, fast });
   const M = 1e6;
@@ -143,19 +229,19 @@ test('summary: by branch, session, model, day and question; breaks are not activ
   assert.deepEqual(s.unpriced, ['claude-sonnet-4-5']);
   assert.deepEqual(s.questions.map((q) => q.text), ['Build the checkout flow', 'Fix the login bug', 'Write the release notes']);
   assert.equal(s.questions[0].tokens, 111000 + 101000 + 102000, '"sure" counts toward the checkout flow');
-  assert.equal(s.notIncluded.length, 2, 'Codex and Gemini are listed as not included yet');
+  assert.deepEqual(s.notIncluded, ['Gemini CLI'], 'Gemini is listed as not included yet; Codex usage is read');
 
   const md = renderReport(s, 'app');
   assert.match(md, /^# Usage · app\n/);
   assert.match(md, /\| feature\/pay \| 1 \| 3 \| 314\.0k \| 3m \| \$0\.22 \|/);
   assert.match(md, /No built-in price for claude-sonnet-4-5/);
-  assert.match(md, /Not included yet: .*Codex/);
+  assert.match(md, /Not included yet: Gemini CLI\./);
   const hidden = await usageSummary(cwd, config({ usage: { showCost: false } }));
   assert.doesNotMatch(renderReport(hidden, 'app'), /\$\d/, 'no costs when turned off');
   assert.doesNotMatch(renderCsv(hidden), /estimated_cost_usd/);
 
   // The panel's figures.
-  assert.equal(describe(s.branches[0], true), '314.0k tokens · $0.22 at API prices · 3m active');
+  assert.equal(describe(s.branches[0], true), '314.0k tokens · $0.22 at API prices · 3m active · ~0.8 Wh', '3 minutes at 15 W');
   assert.equal(describe(s.branches[1], false), '1.1k tokens · <1m active');
   assert.equal(describe({ ...s.branches[1], active: undefined }, true), '1.1k tokens · $0.01+ at API prices', '"+": some replies had no price');
   const a = s.sessions[1];

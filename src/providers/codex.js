@@ -114,6 +114,54 @@ module.exports = {
     return out;
   },
 
+  /**
+   * Token usage per reply. Codex writes a token_usage_record for each model response; its input
+   * count includes the cached part, which is split out as a cache read.
+   */
+  readUsage(ref) {
+    /** @type {import('./types').UsageRecord[]} */
+    const records = [];
+    const seen = new Set();
+    let model = '';
+    let branch;
+    let question = '';
+    let title;
+    for (const line of readJsonl(ref.path)) {
+      const p = line.payload || {};
+      if (line.type === 'session_meta') branch = p.git?.branch || branch;
+      else if (line.type === 'turn_context' && p.model) model = p.model;
+      else if (line.type === 'response_item' && p.type === 'message' && p.role === 'user') {
+        const text = contentText(p.content);
+        // Codex injects <environment_context>/<user_instructions> as user messages.
+        if (text && !/^\s*<(environment_context|user_instructions)/.test(text)) {
+          question = text;
+          title ??= text;
+        }
+      } else if (line.type === 'token_usage_record' && p.usage) {
+        const id = p.response_id || `${line.timestamp}:${records.length}`;
+        if (seen.has(id)) continue; // one record per response
+        seen.add(id);
+        const u = p.usage;
+        const cached = u.cached_input_tokens || 0;
+        const written = u.cache_write_input_tokens || 0;
+        records.push({
+          model: model || 'codex',
+          ts: line.timestamp,
+          branch,
+          question,
+          subagent: false,
+          input: Math.max(0, (u.input_tokens || 0) - cached - written),
+          output: u.output_tokens || 0,
+          cacheRead: cached,
+          cacheWrite5m: written,
+          cacheWrite1h: 0,
+          fast: false,
+        });
+      }
+    }
+    return { title, records };
+  },
+
   target: {
     handoffFile: (cwd) => path.join(cwd, '.codex', 'handoff.md'),
     instructionsFile: (cwd) => path.join(cwd, 'AGENTS.md'),
