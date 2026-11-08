@@ -4,6 +4,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-11-07
+
 ### Added
 
 - **Story check:** when the branch name has a story ID (`feature/24114362`, `bugfix/ABC-123-…`) and your messages mention another ID of the same kind but never the branch's own, Verification warns: "⚠️ story 24173551 discussed on `feature/24114362`: this branch is for story 24114362". Work on one story had been landing on another story's branch unnoticed. Dates and numbers of other lengths aren't treated as IDs.
@@ -175,7 +177,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.1...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.2...HEAD
+[0.7.2]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.3...v0.7.0
 [0.6.3]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.2...v0.6.3
