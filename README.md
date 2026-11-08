@@ -37,6 +37,7 @@ To package it: `npx @vscode/vsce package`, then install the `.vsix` file.
 |---|---|
 | **Compact All** | Reads the newest session of each source provider (default: claude, codex, gemini) from the last 24h, merges them in time order, and writes the handoff everywhere |
 | **Create Handoff From a Specific Session…** | Pick one or more sessions by hand |
+| **Move a Question to Another Chat…** | Take a question, and the replies to it, out of the chat you asked it in: to a new chat, into another branch's handoff, or nowhere (see [Moving a question](#moving-a-question)) |
 | **Switch To Provider…** | Optionally refreshes the handoff, writes it where the chosen provider looks, then opens that tool with a "resume from handoff" prompt |
 | **Install Claude Code Hooks** | Refreshes the handoff on compact and session end, and loads it into new sessions |
 | **Select Summarizer LLM… / Set API Key…** | Choose which LLM writes the handoff (or none) |
@@ -99,6 +100,16 @@ Named copy examples:
 - **Index:** `.carrycontext/handoffs/index.json` caches each file's title, branch and date for the panel and search. It's checked against the files on every read and rebuilt if it's deleted.
 
 `carrycontext.targets` decides which of the provider copies are written. Instruction files only get a block between `<!-- carrycontext:start -->` and `<!-- carrycontext:end -->` markers; nothing else in them is changed.
+
+## Moving a question
+
+Asked something in the wrong chat? **Move a Question to Another Chat…** lists your recent questions in this folder's chats (each with the replies up to your next question) and moves the one you pick:
+
+- **A new chat:** saves it as a handoff of its own and copies a prompt to paste into a new chat.
+- **Another branch:** adds it to that branch's handoff under **Side questions** (the newest 5), with a link to the full question and answer. That branch's own goal and state are left alone, and its next chat sees it.
+- **Nowhere:** just leaves it out.
+
+The chat it came from is saved again without it, versions saved since it was asked are removed, and later saves keep it out. Claude Code's own chat history isn't changed, so that chat still remembers the question until you run `/clear` there: it then restarts from the cleaned handoff.
 
 ## Branch-aware handoffs
 

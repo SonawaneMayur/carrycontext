@@ -14,6 +14,15 @@ test('currentBranch is null outside git', () => {
   assert.equal(g.currentBranch(env.project()), null);
 });
 
+test('localBranches lists local branches, most recently committed first', { skip }, () => {
+  const repo = env.project({ git: true });
+  git(repo, 'checkout', '-q', '-b', 'feature/a');
+  git(repo, 'commit', '-q', '--allow-empty', '-m', 'A', '--date', '2030-01-01T00:00:00Z');
+  git(repo, 'checkout', '-q', 'main');
+  assert.deepEqual(g.localBranches(repo).slice(0, 2).sort(), ['feature/a', 'main']);
+  assert.deepEqual(g.localBranches(env.project()), [], 'outside git');
+});
+
 test('branchAt reads branch switches from the reflog file, without running git', () => {
   const cwd = env.project();
   const line = (sec, message) => `${'0'.repeat(40)} ${'1'.repeat(40)} A U Thor <author@example.com> ${sec} -0500\t${message}`;

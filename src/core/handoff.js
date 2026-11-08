@@ -17,7 +17,9 @@ const { currentBranch, branchAt, contains, isTracked, branchSlug, gitView, repoS
 const { getProvider, listProviders } = require('../providers');
 const { getLlm } = require('../llm');
 
-const RENDER_ORDER = ['Goal', 'Background', 'Current state', 'Other recent sessions', 'Verification', 'Recent requests', 'Key decisions', 'Files & code', 'Repository state', 'Commands run', 'Open tasks', 'Next steps', 'Gotchas'];
+const RENDER_ORDER = ['Goal', 'Background', 'Current state', 'Other recent sessions', 'Verification', 'Recent requests', 'Key decisions', 'Files & code', 'Repository state', 'Commands run', 'Open tasks', 'Next steps', 'Side questions', 'Gotchas'];
+const SIDE_QUESTIONS_KEPT = 5;
+const MOVED = 'Moved question'; // session name of a question moved out of its chat
 
 function paths(cwd) {
   const dir = dataDir(cwd);
@@ -89,6 +91,125 @@ async function unsavedSessions(cwd, config, { idleMs, hooked = [], switched = fa
   return out.sort((a, b) => a.ref.updatedAt - b.ref.updatedAt);
 }
 
+/** A chat's messages without the questions moved out of it ("Move a Question…"). */
+function withoutMoved(state, ref, messages) {
+  const spans = state.moved?.[sessionKey(ref.path)] || [];
+  const at = (m) => Date.parse(m.ts || '');
+  return spans.length ? messages.filter((m) => !spans.some((s) => at(m) >= Date.parse(s.from) && at(m) <= Date.parse(s.to))) : messages;
+}
+
+/**
+ * Your recent questions in a chat, newest first. Each covers your message and the replies up
+ * to your next one. Questions already moved out are left out.
+ * @param {string} cwd
+ * @param {{adapter: any, ref: import('../providers/types').SessionRef}} session
+ * @returns {Promise<{text: string, from: string, to: string}[]>}
+ */
+async function recentQuestions(cwd, { adapter, ref }, limit = 5) {
+  const messages = withoutMoved(loadState(cwd), ref, await adapter.readSession(ref));
+  const out = [];
+  messages.forEach((m, i) => {
+    if (m.role !== 'user' || !m.ts || !m.text.trim()) return;
+    const next = messages.findIndex((x, j) => j > i && x.role === 'user');
+    const span = messages.slice(i, next === -1 ? undefined : next).filter((x) => x.ts);
+    out.push({ text: m.text.trim(), from: m.ts, to: /** @type {string} */ (span[span.length - 1].ts) });
+  });
+  return out.reverse().slice(0, limit);
+}
+
+/**
+ * Move a question, and the replies to it, out of a chat: into a new chat, into another branch's
+ * handoff, or nowhere. The chat's handoff is rewritten without it and stays that way on later
+ * saves. Claude Code's own chat history is never changed.
+ * @param {Object} opts
+ * @param {string} opts.cwd
+ * @param {import('./config').Config} opts.config
+ * @param {{adapter: any, ref: import('../providers/types').SessionRef}} opts.session
+ * @param {{text: string, from: string, to: string}} opts.question   from recentQuestions()
+ * @param {{kind: 'new' | 'branch' | 'drop', branch?: string}} opts.to
+ * @param {(provider: string) => Promise<string | undefined>} opts.getApiKey
+ * @returns {Promise<{file?: string, prompt?: string}>}  the moved question's handoff, and a prompt for a new chat
+ */
+async function moveQuestion({ cwd, config, session, question, to, getApiKey }) {
+  const { ref } = session;
+  const messages = await session.adapter.readSession(ref);
+  const here = currentBranch(cwd);
+  let file;
+  if (to.kind !== 'drop') {
+    const target = to.kind === 'branch' && to.branch ? to.branch : here;
+    const at = (m) => Date.parse(m.ts || '');
+    const span = messages.filter((m) => at(m) >= Date.parse(question.from) && at(m) <= Date.parse(question.to));
+    file = writeMovedHandoff(cwd, config, target, here, ref, question, span);
+    if (to.kind === 'branch' && to.branch) addSideQuestion(cwd, config, to.branch, here, question, file);
+  }
+  // Remember the move, so later saves of this chat leave the question out too.
+  const state = loadState(cwd);
+  const key = sessionKey(ref.path);
+  state.moved ||= {};
+  state.moved[key] = [...(state.moved[key] || []), { from: question.from, to: question.to }];
+  saveState(cwd, state);
+  // Rewrite the chat's handoff without it, and remove versions saved since it was asked: they include it.
+  if (withoutMoved(state, ref, messages).length) {
+    const res = await updateHandoff({ cwd, sessions: [session], trigger: 'moved-question', config, getApiKey });
+    removeVersionsSince(cwd, here, res.sessionFile, Date.parse(question.from));
+  }
+  return file ? { file, prompt: `Read ${rel(cwd, file)}. It is a question moved here from another chat, with the answer so far. Continue from it.` } : {};
+}
+
+/** The moved question as a handoff of its own, under the branch it now belongs to. */
+function writeMovedHandoff(cwd, config, branch, from, ref, question, span) {
+  const facts = heuristicSections(span, {}, cwd);
+  const description = shortText(question.text, 8) || 'question';
+  // Its own id, so the panel lists it as its own session rather than as part of the chat it came from.
+  const id = `m${crypto.createHash('sha256').update(`${ref.path}|${question.from}`).digest('hex').slice(0, 7)}`;
+  const doc = renderDoc({
+    cwd,
+    branch,
+    sections: {
+      Goal: question.text,
+      'Current state': facts['Current state'],
+      'Files & code': facts['Files & code'],
+      'Commands run': facts['Commands run'],
+      'Next steps': '- Continue from this question. It was asked in another chat, so check the current state of the files first.',
+    },
+    sources: [{ provider: ref.provider, id, messages: span.length }],
+    trigger: `moved from a ${ref.provider} chat${from ? ` on ${from}` : ''}`,
+    summarizer: 'heuristic',
+    session: MOVED,
+    description,
+  });
+  const file = path.join(branchPaths(cwd, branch).saved, handoffFileName([{ ref }], MOVED, description));
+  writeFile(file, cleanDoc(doc, cwd, config));
+  ensureGitignore(cwd);
+  return file;
+}
+
+/** List a moved question in a branch's handoff, under "Side questions" (newest first, the last few kept). */
+function addSideQuestion(cwd, config, branch, from, question, file) {
+  const bp = branchPaths(cwd, branch);
+  const doc = readText(bp.handoff) || cleanDoc(emptyDoc(cwd, branch), cwd, config);
+  const entry = `- ${question.from.slice(0, 10)}${from ? ` · from \`${from}\`` : ''}: ${shortText(question.text, 14)} ([question and answer](${rel(cwd, file)}))`;
+  const earlier = (parseSections(doc)['Side questions'] || '').split('\n').filter((l) => l.startsWith('- '));
+  writeFile(bp.handoff, setSection(doc, 'Side questions', [entry, ...earlier].slice(0, SIDE_QUESTIONS_KEPT).join('\n')));
+  if (branch === currentBranch(cwd)) activateBranch(cwd, config, branch); // refresh the active copies
+}
+
+/** Replace a level-2 section's body, or add the section at the end. */
+function setSection(doc, name, body) {
+  const re = new RegExp(`\\n## ${name}\\n[\\s\\S]*?(?=\\n## |$)`);
+  const block = `\n## ${name}\n\n${body}\n`;
+  return re.test(doc) ? doc.replace(re, block) : `${doc.replace(/\n*$/, '\n')}${block}`;
+}
+
+/** Remove a session's versions saved since `since` (ms), except `keep`. */
+function removeVersionsSince(cwd, branch, keep, since) {
+  const slug = branch ? branchSlug(branch) : null;
+  const session = catalog(cwd)
+    .find((b) => b.slug === slug)
+    ?.sessions.find((s) => s.versions.some((v) => v.file === keep));
+  for (const v of session?.versions || []) if (v.file !== keep && v.at >= since) fs.rmSync(v.file, { force: true });
+}
+
 /**
  * Read sessions, summarize (merging with the previous handoff) and write everywhere.
  * Messages are filed under the branch they were sent on, so one session that spans
@@ -104,8 +225,9 @@ async function updateHandoff({ cwd, sessions, trigger, config, getApiKey }) {
   if (!sessions.length) throw new Error('No sessions found for this workspace.');
   const messages = [];
   const sources = [];
+  const before = loadState(cwd);
   for (const { adapter, ref } of sessions) {
-    const msgs = await adapter.readSession(ref);
+    const msgs = withoutMoved(before, ref, await adapter.readSession(ref));
     messages.push(...msgs);
     sources.push({ provider: ref.provider, id: ref.id, messages: msgs.length });
   }
@@ -180,6 +302,8 @@ async function writeBranchHandoff({ cwd, branch, current, messages, sessions, so
   }
   // Context inherited from the parent branch is kept until the branch's own work replaces it.
   if (prev.Background && !sections.Background) sections.Background = prev.Background;
+  // Questions moved here from other chats stay listed, like the background.
+  if (prev['Side questions'] && !sections['Side questions']) sections['Side questions'] = prev['Side questions'];
   // Decisions only accumulate, so repeated compactions can't summarize them away.
   const tag = [new Date().toISOString().slice(0, 10), branch].filter(Boolean).join(' · ');
   sections['Key decisions'] =
@@ -255,7 +379,6 @@ function cleanDoc(doc, cwd, config) {
   return text.replace(/^(- \*\*Summarizer:\*\* .*)$/m, `$1\n${note}`);
 }
 
-/** Starting handoff for a new branch: the parent's essentials, kept as background. */
 /** A branch's handoff before any work on it is saved, so no assistant reads another branch's context. */
 function emptyDoc(cwd, branch) {
   return renderDoc({
@@ -271,6 +394,7 @@ function emptyDoc(cwd, branch) {
   });
 }
 
+/** Starting handoff for a new branch: the parent's essentials, kept as background. */
 function inheritedDoc(cwd, branch, parent, parentDoc) {
   const prev = parseSections(parentDoc);
   const background = [
@@ -322,7 +446,8 @@ function otherSessions(cwd, branch, sources, config) {
   const since = Date.now() - config.lookbackHours * 3600000;
   const sessions = catalog(cwd).find((b) => b.slug === slug)?.sessions || [];
   return sessions
-    .filter((s) => s.key !== key && s.at >= since)
+    // A question moved out of a chat doesn't come back into it this way.
+    .filter((s) => s.key !== key && s.at >= since && s.title !== MOVED)
     .slice(0, OTHER_SESSIONS)
     .map((s) => {
       const text = readText(s.file) || '';
@@ -465,6 +590,8 @@ module.exports = {
   lastProcessed,
   gatherSessions,
   unsavedSessions,
+  recentQuestions,
+  moveQuestion,
   updateHandoff,
   activateBranch,
   listSavedHandoffs: listSaved,

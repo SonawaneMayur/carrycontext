@@ -4,6 +4,10 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- **Move a Question to Another Chat…:** asked something in the wrong chat? Pick the question (it takes the replies up to your next question with it) and move it to a new chat (its own handoff, plus a prompt on your clipboard), into another branch's handoff under **Side questions**, or nowhere. The chat it left is saved again without it and keeps it out on later saves. Claude Code's own chat history isn't changed: run `/clear` in that chat to make it forget the question too.
+
 ## [0.7.2] - 2026-11-07
 
 ### Added

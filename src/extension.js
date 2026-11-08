@@ -4,10 +4,10 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const { saveConfig, normalizeConfig } = require('./core/config');
-const { paths, loadState, gatherSessions, unsavedSessions, updateHandoff, activateBranch, syncTargets, resumePrompt } = require('./core/handoff');
+const { paths, loadState, gatherSessions, unsavedSessions, recentQuestions, moveQuestion, updateHandoff, activateBranch, syncTargets, resumePrompt } = require('./core/handoff');
 const { catalog, search } = require('./core/catalog');
 const { usageSummary, renderReport, renderCsv } = require('./core/usage');
-const { currentBranch, headFile } = require('./core/git');
+const { currentBranch, headFile, localBranches } = require('./core/git');
 const { installClaudeHooks, updateHookSettings, writeHookScript, hooksInstalled, processPayload, pendingPayloads } = require('./core/claudeHooks');
 const { getProvider, listProviders } = require('./providers');
 const { getLlm, listLlms } = require('./llm');
@@ -202,6 +202,7 @@ function activate(context) {
         { label: '$(arrow-swap) Switch To Provider…', detail: 'Continue this work in another assistant', command: 'carrycontext.switchProvider' },
         { label: '$(search) Find Handoff…', detail: 'Search saved handoffs by title, branch or any text inside', command: 'carrycontext.openHandoff' },
         { label: '$(comment-discussion) Create Handoff From a Session…', detail: 'Pick specific sessions', command: 'carrycontext.compactSession' },
+        { label: '$(arrow-right) Move a Question…', detail: 'Take a question out of its chat: to a new chat, another branch, or nowhere', command: 'carrycontext.moveQuestion' },
         { label: '$(clippy) Copy Resume Prompt', command: 'carrycontext.copyResumePrompt' },
         { label: '$(graph) Usage Report', detail: 'Tokens, models, active time and estimated cost, from the logs on this computer', command: 'carrycontext.usageReport' },
         { label: '', kind: vscode.QuickPickItemKind.Separator },
@@ -293,6 +294,42 @@ function activate(context) {
       if (!items.length) return vscode.window.showInformationMessage('No sessions found for this folder.');
       const picked = await vscode.window.showQuickPick(items, { canPickMany: true, placeHolder: 'Sessions to include in the handoff' });
       if (picked?.length) await run('Create handoff', () => compact(picked, 'vscode:manual'));
+    },
+    // A question asked in the wrong chat: take it, and the replies to it, out of that chat's handoff
+    // and put it where it belongs. Claude Code's own chat history is never changed.
+    'carrycontext.moveQuestion': async () => {
+      const dir = cwd();
+      if (!dir) return;
+      const items = [];
+      for (const session of await gatherSessions(dir, config())) {
+        for (const question of await recentQuestions(dir, session)) {
+          items.push({ label: oneLine(question.text), description: `${session.adapter.label} · ${ago(question.from)}`, session, question });
+        }
+      }
+      if (!items.length) return vscode.window.showInformationMessage('No recent questions found in this folder’s chats.');
+      const picked = await vscode.window.showQuickPick(items, { placeHolder: 'Which question should move out of its chat?' });
+      if (!picked) return;
+      const here = currentBranch(dir);
+      const destinations = [
+        { label: '$(add) A new chat', detail: 'Saves it as its own handoff and copies a prompt to paste into a new chat', to: { kind: 'new' } },
+        ...localBranches(dir)
+          .filter((b) => b !== here)
+          .map((b) => ({ label: `$(git-branch) ${b}`, detail: "Adds it to that branch's handoff, under Side questions", to: { kind: 'branch', branch: b } })),
+        { label: '$(trash) Nowhere', detail: "Just leaves it out of this chat's handoff", to: { kind: 'drop' } },
+      ];
+      const dest = await vscode.window.showQuickPick(destinations, { placeHolder: `Move "${oneLine(picked.question.text, 50)}" to…` });
+      if (!dest) return;
+      const res = await run('Move question', () => moveQuestion({ cwd: dir, config: config(), session: picked.session, question: picked.question, to: dest.to, getApiKey }));
+      if (!res) return; // run() has shown the error
+      const forget = 'To make that chat forget it too, run /clear there: it restarts from the cleaned handoff.';
+      if (dest.to.kind === 'new' && res.prompt) {
+        await vscode.env.clipboard.writeText(res.prompt);
+        vscode.window.showInformationMessage(`Moved. A prompt is on your clipboard: paste it into a new chat. ${forget}`);
+      } else if (dest.to.kind === 'branch') {
+        vscode.window.showInformationMessage(`Moved to ${dest.to.branch}: its next chat sees it under Side questions. ${forget}`);
+      } else {
+        vscode.window.showInformationMessage(`Left out of that chat's handoff. ${forget}`);
+      }
     },
 
     'carrycontext.switchProvider': async () => {
@@ -504,6 +541,12 @@ function activate(context) {
     }
   }
   refreshStatus();
+}
+
+/** A message on one line, cut to `max` characters, for pickers. */
+function oneLine(text, max = 80) {
+  const line = text.replace(/\s+/g, ' ').trim();
+  return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
 /** Hand the current handoff to the chosen provider. */

@@ -159,6 +159,73 @@ test('a handoff warns when the chat is about another story than its branch', { s
   assert.match(res.doc, /- \*\*Verification:\*\* 0 verified, 1 unverified, 0 contradicted/);
 });
 
+test('Move a Question to a new chat: its own handoff and prompt, and it stays out of the chat it left', async () => {
+  const cwd = env.project();
+  const file = writeClaude(cwd, 'cart', [
+    { role: 'user', text: 'Build the cart page' },
+    { role: 'assistant', text: 'Cart page built' },
+    { role: 'user', text: 'Side question: how do refunds work?' },
+    { role: 'assistant', text: 'Refunds go through the payments API' },
+  ]);
+  const session = claudeSession(file);
+  await h.updateHandoff({ cwd, sessions: [session], trigger: 't', config: config(), getApiKey: noKey }); // a version that includes it
+  const questions = await h.recentQuestions(cwd, session);
+  assert.deepEqual(questions.map((q) => q.text), ['Side question: how do refunds work?', 'Build the cart page'], 'newest first');
+
+  const res = await h.moveQuestion({ cwd, config: config(), session, question: questions[0], to: { kind: 'new' }, getApiKey: noKey });
+  assert.match(read(res.file), /## Goal\n\nSide question: how do refunds work\?/);
+  assert.match(read(res.file), /Refunds go through the payments API/, 'with the answer so far');
+  assert.match(res.prompt, /^Read \.carrycontext\/handoffs\/.+\.md\. It is a question moved here from another chat/);
+  const handoff = () => read(path.join(cwd, '.carrycontext', 'handoff.md'));
+  assert.match(handoff(), /Build the cart page/);
+  assert.doesNotMatch(handoff(), /refund/i);
+  const sessions = require('../src/core/catalog').catalog(cwd)[0].sessions;
+  assert.deepEqual(sessions.map((s) => s.title).sort(), ['Build the cart page', 'Moved question'], 'listed as its own session');
+  assert.equal(sessions.find((s) => s.title === 'Build the cart page').versions.length, 1, 'the version saved with the question in it is gone');
+
+  // More chatting in the same chat: saved as usual, and the moved question stays out.
+  fs.appendFileSync(file, JSON.stringify({ type: 'user', timestamp: new Date().toISOString(), message: { role: 'user', content: 'Now add the checkout button' } }) + '\n');
+  await h.updateHandoff({ cwd, sessions: [session], trigger: 't', config: config(), getApiKey: noKey });
+  assert.match(handoff(), /checkout button/);
+  assert.doesNotMatch(handoff(), /refund/i);
+  assert.deepEqual((await h.recentQuestions(cwd, session)).map((q) => q.text), ['Now add the checkout button', 'Build the cart page']);
+});
+
+test("Move a Question to another branch: listed under Side questions there, that branch's own state untouched", { skip: !hasGit && 'git missing' }, async () => {
+  const cwd = env.project({ git: true });
+  git(cwd, 'checkout', '-q', '-b', 'feature/search');
+  fs.writeFileSync(path.join(cwd, 'search.js'), 'x');
+  git(cwd, 'add', '.');
+  git(cwd, 'commit', '-q', '-m', 'Search');
+  const searchChat = writeClaude(cwd, 'search', [
+    { role: 'user', text: 'Build product search', branch: 'feature/search' },
+    { role: 'assistant', text: 'Search works', branch: 'feature/search' },
+  ]);
+  await h.updateHandoff({ cwd, sessions: [claudeSession(searchChat)], trigger: 't', config: config(), getApiKey: noKey });
+  git(cwd, 'checkout', '-q', 'main');
+  const mainChat = writeClaude(cwd, 'main', [
+    { role: 'user', text: 'Tidy the README', branch: 'main' },
+    { role: 'assistant', text: 'Tidied', branch: 'main' },
+    { role: 'user', text: 'Should search match partial words?', branch: 'main' },
+    { role: 'assistant', text: 'Yes, use a prefix match', branch: 'main' },
+  ]);
+  const session = claudeSession(mainChat);
+  const [side] = await h.recentQuestions(cwd, session);
+  await h.moveQuestion({ cwd, config: config(), session, question: side, to: { kind: 'branch', branch: 'feature/search' }, getApiKey: noKey });
+
+  const search = () => read(path.join(cwd, '.carrycontext', 'branches', 'feature__search', 'handoff.md'));
+  assert.match(search(), /## Side questions\n\n- \d{4}-\d\d-\d\d · from `main`: Should search match partial words\? \(\[question and answer\]\(\.carrycontext\/handoffs\/feature__search\/[^)]+\.md\)\)/);
+  assert.match(search(), /Search works/, "the branch's own state is untouched");
+  assert.doesNotMatch(read(path.join(cwd, '.carrycontext', 'handoff.md')), /partial words/, "main's handoff leaves it out");
+
+  // The section survives that branch's next save.
+  git(cwd, 'checkout', '-q', 'feature/search');
+  fs.appendFileSync(searchChat, JSON.stringify({ type: 'user', gitBranch: 'feature/search', timestamp: new Date().toISOString(), message: { role: 'user', content: 'Add search filters' } }) + '\n');
+  await h.updateHandoff({ cwd, sessions: [claudeSession(searchChat)], trigger: 't', config: config(), getApiKey: noKey });
+  assert.match(search(), /Add search filters/);
+  assert.match(search(), /## Side questions\n\n- .*partial words/);
+});
+
 const SECRET_DOC = '<!-- carrycontext:handoff v1 -->\n# Handoff: app\n\n## Goal\n\nShip the secret plan\n';
 const copilotOnly = () => ({ ...config(), targets: ['copilot'] });
 

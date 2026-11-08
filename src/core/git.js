@@ -150,6 +150,12 @@ function isTracked(cwd, file) {
   return gitAvailable() && git(cwd, ['ls-files', '--error-unmatch', '--', file]) !== null;
 }
 
+/** Local branches, most recently committed first. Empty outside git. */
+function localBranches(cwd) {
+  const out = gitAvailable() ? git(cwd, ['for-each-ref', '--sort=-committerdate', '--format=%(refname:short)', 'refs/heads']) : null;
+  return out ? out.split('\n').filter(Boolean) : [];
+}
+
 const STATUS_LABELS = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'copied', '??': 'untracked' };
 const MAX_LIST = 25;
 
@@ -243,4 +249,4 @@ function repoState(cwd, view = gitView(cwd)) {
   return `_Read from git when this handoff was written. Check it again before relying on it._\n\n${lines.join('\n')}`;
 }
 
-module.exports = { gitDir, headFile, currentBranch, branchAt, contains, isTracked, branchSlug, gitAvailable, gitView, repoState, excludeLocally, includeLocally };
+module.exports = { gitDir, headFile, currentBranch, branchAt, contains, isTracked, localBranches, branchSlug, gitAvailable, gitView, repoState, excludeLocally, includeLocally };

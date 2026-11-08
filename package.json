@@ -82,6 +82,11 @@
         "category": "CarryContext"
       },
       {
+        "command": "carrycontext.moveQuestion",
+        "title": "Move a Question to Another Chat…",
+        "category": "CarryContext"
+      },
+      {
         "command": "carrycontext.switchProvider",
         "title": "Switch To Provider…",
         "category": "CarryContext",
