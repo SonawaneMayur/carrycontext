@@ -173,7 +173,8 @@ test('features: branches for one story count together, with tokens and cost per 
   assert.match(md, /\|  \|  \| all LLMs \| [\d.]+k \| \$0\.05\+ \|  \|  \|  \|/);
   assert.match(md, /\| no price \| 3\.2k \| Review the export \|/, 'a question with no price says so');
   assert.match(md, /estimated at 60 W .*priced at \$10\/kWh\. The AI's own data-center energy isn't included/);
-  assert.match(renderCsv(s), /,24114362,bugfix\/24114362-export,claude-sonnet-5-5,2026-11-03,"[^"]+ cores",/);
+  // Quoted only when the machine's name has a comma (a Mac's "Mac17,7"; not a Linux machine's).
+  assert.match(renderCsv(s), /,24114362,bugfix\/24114362-export,claude-sonnet-5-5,2026-11-03,("?)[^"\n]+ cores\1,/);
 });
 
 test("a chat whose log is gone keeps the totals it was recorded with, even after a price change", async () => {
