@@ -78,7 +78,7 @@ At the top: **Find Handoff** (🔍), **Compact All**, **Switch To Provider**, a 
 |---|---|
 | `.carrycontext/handoff.md` | Handoff for the checked-out branch; the provider copies below are made from it |
 | `.carrycontext/branches/<branch>/handoff.md` | Each git branch's own handoff (see [Branch-aware handoffs](#branch-aware-handoffs)) |
-| `.carrycontext/handoffs/<branch>/<provider>-<session-name>--<short-description>.md` | A named copy of every handoff. Each session keeps its newest `carrycontext.handoffLimit` (default 50) |
+| `.carrycontext/handoffs/<branch>/<provider>-<session-name>--<short-description>.md` | A named copy of every handoff. Each session keeps its newest `carrycontext.handoffLimit` (default 10) |
 | `.claude/handoff.md` | Claude Code, injected at session start by the SessionStart hook |
 | `.codex/handoff.md` + block in `AGENTS.md` | Codex CLI |
 | `.gemini/handoff.md` + block in `GEMINI.md` | Gemini CLI |
@@ -149,6 +149,7 @@ A summary can be wrong: a session may say it edited a file it never wrote, or th
 | **File edits** (failed edits are ignored) | git shows a change, or a commit touched the file after the edit; outside git, the file changed after the edit | no change visible | the file doesn't exist |
 | **Tests and builds** (`npm test`, `pytest`, `go test`, `cargo test`, `tsc`, `npm run build`, …): the last run of each | passed, nothing edited since | passed but files changed afterwards, or no result recorded | the last run failed |
 | **Commits the session mentions** | the commit exists | not in this repo (another repo, or an example?) | (not used) |
+| **Story on the branch**: when the branch name has a story ID (`feature/24114362`, `bugfix/ABC-123-…`) | (not used) | your messages mention another ID of the same kind, and never the branch's own: the work may be on the wrong branch | (not used) |
 
 Each ❌ also becomes the first item under **Next steps**, so the next assistant fixes it instead of building on it, and an LLM summarizer is told not to describe it as done. The sidebar shows the counts next to **Latest handoff**.
 
@@ -168,7 +169,7 @@ The LLM summarizer gets the same facts and is told to trust git where it disagre
 
 ## Claude Code integration
 
-**Install Claude Code Hooks** adds three hooks to `.claude/settings.local.json`:
+**Install Claude Code Hooks** adds three hooks to `.claude/settings.local.json`. When a folder has Claude Code chats but no hooks, CarryContext offers to install them; **Not now** asks again a week later, **Don't ask again** stops for that workspace.
 
 - **PreCompact** (manual `/compact` and auto-compact) → refresh the handoff
 - **SessionEnd** (exit, `/clear`, logout) → refresh the handoff

@@ -27,7 +27,7 @@ const DEFAULTS = {
   sources: ['claude', 'codex', 'gemini'],
   targets: ['claude', 'codex', 'gemini'],
   lookbackHours: 24,
-  handoffLimit: 50,
+  handoffLimit: 10,
   maxTranscriptChars: 150000,
   autoUpdate: { enabled: true, idleSeconds: 120 },
   redact: { enabled: true, extraPatterns: [] },

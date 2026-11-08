@@ -147,6 +147,18 @@ test('in git: provider copies are kept out of git through .git/info/exclude, onc
   assert.equal(read(path.join(cwd, '.gitignore')), 'node_modules/\n', "the user's .gitignore is untouched");
 });
 
+test('a handoff warns when the chat is about another story than its branch', { skip: !hasGit && 'git missing' }, async () => {
+  const cwd = env.project({ git: true });
+  git(cwd, 'checkout', '-q', '-b', 'feature/24114362');
+  const file = writeClaude(cwd, 'o', [
+    { role: 'user', text: 'Build the Outlook utilities for story 24173551', branch: 'feature/24114362' },
+    { role: 'assistant', text: 'Started', branch: 'feature/24114362' },
+  ]);
+  const res = await h.updateHandoff({ cwd, sessions: [claudeSession(file)], trigger: 't', config: config(), getApiKey: noKey });
+  assert.match(res.doc, /⚠️ story 24173551 discussed on `feature\/24114362`: this branch is for story 24114362/);
+  assert.match(res.doc, /- \*\*Verification:\*\* 0 verified, 1 unverified, 0 contradicted/);
+});
+
 const SECRET_DOC = '<!-- carrycontext:handoff v1 -->\n# Handoff: app\n\n## Goal\n\nShip the secret plan\n';
 const copilotOnly = () => ({ ...config(), targets: ['copilot'] });
 

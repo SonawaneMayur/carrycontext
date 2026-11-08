@@ -1,4 +1,5 @@
 // @ts-check
+const path = require('path');
 const { truncate } = require('./util');
 const { getLlm } = require('../llm');
 const { sanitize } = require('./sanitize');
@@ -91,14 +92,24 @@ function parseSections(doc) {
 
 const bullets = (items, fmt = (x) => x) => (items.length ? items.map((x) => `- ${fmt(x)}`).join('\n') : '');
 
+/** Whether a file the session touched is in the project, not a scratch folder, /tmp or the assistant's memory. */
+const inProject = (cwd) => (file) => {
+  if (!cwd || !path.isAbsolute(file)) return !file.startsWith('~');
+  const rel = path.relative(cwd, file);
+  return Boolean(rel) && !rel.startsWith('..') && !path.isAbsolute(rel);
+};
+
 /**
  * No-LLM handoff. Keeps sections from the previous handoff that a transcript
  * scan cannot reproduce (decisions, gotchas), so it never discards a richer
  * LLM- or agent-written handoff.
+ * @param {string} [cwd]  when given, "Files & code" lists only files inside it
  * @returns {Record<string, string>}
  */
-function heuristicSections(messages, prev) {
+function heuristicSections(messages, prev, cwd) {
   const facts = extractFacts(messages);
+  facts.edited = facts.edited.filter(inProject(cwd));
+  facts.read = facts.read.filter(inProject(cwd));
   const users = messages.filter((m) => m.role === 'user' && m.text.trim());
   const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant' && m.text.trim());
   const openTodos = (facts.todos || []).filter((t) => t.status !== 'completed');
@@ -148,7 +159,8 @@ function constraintStatements(userMessages) {
   for (const m of userMessages.slice(-30)) {
     for (const sentence of m.text.split(/(?<=[.!?])\s+|\n+/)) {
       const t = sentence.trim().replace(/\s+/g, ' ');
-      if (t.length >= 15 && t.length <= 220 && isRule(t) && !/^[<`]/.test(t)) out.push(`${t} _(user request)_`);
+      // Not tags, code, or markdown table rows (a cell saying "never" isn't a decision).
+      if (t.length >= 15 && t.length <= 220 && isRule(t) && !/^[<`|]/.test(t) && !/\|.*\|/.test(t)) out.push(`${t} _(user request)_`);
     }
   }
   return out.slice(-MAX_CONSTRAINTS);

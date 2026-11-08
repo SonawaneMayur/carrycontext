@@ -142,6 +142,24 @@ function activate(context) {
     status.show();
   }
 
+  // Without the hooks, Claude Code chats aren't saved on compact or session end, and new chats
+  // don't load the handoff. Ask when this folder has chats: "Not now" (or closing the message)
+  // asks again in a week, "Don't ask again" stops for this workspace.
+  async function askForHooks(dir) {
+    const askAfter = context.workspaceState.get('claudeHooksAskAfter'); // ms, or -1 for never
+    if (askAfter === -1 || (askAfter && Date.now() < askAfter)) return;
+    const [chat] = await getProvider('claude').listSessions(dir, { limit: 1 });
+    if (!chat) return;
+    const answer = await vscode.window.showInformationMessage(
+      'CarryContext: install the Claude Code hooks? Chats are then saved when you compact or end them, and new chats start from the handoff.',
+      'Install hooks',
+      'Not now',
+      "Don't ask again",
+    );
+    if (answer === 'Install hooks') return commands['carrycontext.installClaudeHooks']();
+    context.workspaceState.update('claudeHooksAskAfter', answer === "Don't ask again" ? -1 : Date.now() + 7 * 24 * 3600000);
+  }
+
   async function drainInbox(minAgeMs) {
     const dir = cwd();
     if (!dir) return;
@@ -448,11 +466,8 @@ function activate(context) {
       writeHookScript(dir, cliPath, process.execPath);
       updateHookSettings(dir, false); // e.g. adds the "compact" matcher to older installs
     }
-    else if (config().sources.includes('claude') && !context.workspaceState.get('claudeHooksPrompted')) {
-      context.workspaceState.update('claudeHooksPrompted', true);
-      vscode.window
-        .showInformationMessage('CarryContext: auto-update the handoff when Claude Code compacts or a session ends?', 'Install hooks', 'Not now')
-        .then((a) => a === 'Install hooks' && commands['carrycontext.installClaudeHooks']());
+    else if (config().sources.includes('claude')) {
+      askForHooks(dir).catch((e) => output.appendLine(`[error] hooks reminder: ${e.message}`));
     }
     const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(dir, '.carrycontext/{state.json,handoff.md,handoffs/**/*.md}'));
     watcher.onDidChange(refreshStatus);
@@ -501,7 +516,7 @@ async function launch(cwd, providerId) {
   const provider = getProvider(providerId);
   // Make sure this provider has its copy even if it is not in carrycontext.targets.
   const cfg = vscode.workspace.getConfiguration('carrycontext');
-  syncTargets(cwd, { targets: [providerId], handoffLimit: cfg.get('handoffLimit', 50) });
+  syncTargets(cwd, { targets: [providerId], handoffLimit: cfg.get('handoffLimit', 10) });
   const prompt = resumePrompt(cwd, providerId);
 
   if (provider.launch?.terminal) {

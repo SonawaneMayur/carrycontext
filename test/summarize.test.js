@@ -62,6 +62,30 @@ test('the short description skips replies that say nothing about the work', () =
   }
 });
 
+test('"Files & code" lists only files in the project, not scratch folders, /tmp or the assistant\'s memory', () => {
+  const touched = assistant('', [
+    { name: 'Edit', input: { file_path: '/p/app/src/a.js' } },
+    { name: 'Edit', input: { file_path: '/home/u/.claude/projects/app/memory/rule.md' } },
+    { name: 'Read', input: { file_path: '/tmp/scratch/notes.txt' } },
+    { name: 'Read', input: { file_path: '/p/app/README.md' } },
+    { name: 'apply_patch', input: { raw: '*** Update File: src/b.js' } },
+  ]);
+  const files = s.heuristicSections([user('Fix it'), touched], {}, '/p/app')['Files & code'];
+  assert.match(files, /\/p\/app\/src\/a\.js/);
+  assert.match(files, /src\/b\.js/, 'relative paths are project files');
+  assert.match(files, /README\.md/);
+  assert.doesNotMatch(files, /memory|\/tmp/);
+  assert.match(s.heuristicSections([user('Fix it'), touched], {})['Files & code'], /\/tmp\/scratch/, 'without a project folder, nothing is dropped');
+});
+
+test('constraintStatements skips markdown table rows', () => {
+  const found = s.constraintStatements([user('| Rule | Never edit generated files |\n| Owner | Must be the platform team |\nNever push to main directly.')]);
+  assert.deepEqual(
+    found.map((f) => f.replace(/ _\(user request\)_$/, '')),
+    ['Never push to main directly.'],
+  );
+});
+
 test('heuristicSections keeps richer sections from the previous handoff', () => {
   const sec = s.heuristicSections([user('more work'), assistant('ok')], { Goal: 'Original goal', Gotchas: 'Watch out' });
   assert.equal(sec.Goal, 'Original goal');

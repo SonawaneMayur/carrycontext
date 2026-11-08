@@ -19,6 +19,8 @@ const { EDIT_TOOLS, SHELL_TOOLS } = require('./summarize');
  * @typedef {Object} VerifyContext
  * @property {string} cwd
  * @property {ReturnType<typeof import('./git').gitView>} git   null outside git
+ * @property {string | null} [branch]     the checked-out branch
+ * @property {string[]} [requests]         the user's messages in the session
  *
  * @typedef {Object} ClaimChecker
  * @property {string} id
@@ -138,7 +140,46 @@ const checkers = [
       return { status: 'unverified', evidence: 'not in this repo (from another repo, or an example?)' };
     },
   },
+
+  {
+    // Work on one story saved on another story's branch, e.g. story 24173551 discussed on
+    // feature/24114362. A warning, not a contradiction: mentioning another story can be a
+    // cross-reference, so it's only raised when the branch's own story never comes up.
+    id: 'branch-story',
+    extract(steps, ctx) {
+      const own = storyId(ctx.branch);
+      if (!own) return [];
+      const mentioned = new Set((ctx.requests || []).flatMap((text) => storyIds(text, own)));
+      if (mentioned.has(own.id)) return [];
+      return [...mentioned].slice(0, 3).map((id) => ({ label: `story ${id} discussed on \`${ctx.branch}\``, data: { own: own.id } }));
+    },
+    verify(claim) {
+      return { status: 'unverified', evidence: `this branch is for story ${claim.data.own}; check the work is on the right branch` };
+    },
+  },
 ];
+
+const isDate = (digits) => /^(19|20)\d\d(0[1-9]|1[0-2])(0[1-9]|[12]\d|3[01])$/.test(digits);
+
+/**
+ * The story or ticket ID in a branch name, with a pattern for IDs of the same kind: a Jira-style
+ * key (ABC-123, matching other ABC- keys) or a number of 5+ digits (matching numbers of the same
+ * length). Numbers that read as dates (20261107) aren't IDs.
+ * @param {string | null | undefined} branch
+ */
+function storyId(branch) {
+  const key = (branch || '').match(/(?<![A-Za-z0-9])([A-Za-z][A-Za-z0-9]{1,9})-(\d+)(?![A-Za-z0-9])/);
+  if (key) return { id: `${key[1].toUpperCase()}-${key[2]}`, key: key[1].toUpperCase(), pattern: new RegExp(`(?<![A-Za-z0-9])${key[1]}-(\\d+)(?![A-Za-z0-9])`, 'gi') };
+  for (const m of (branch || '').matchAll(/(?<![A-Za-z0-9])\d{5,}(?![A-Za-z0-9])/g)) {
+    if (!isDate(m[0])) return { id: m[0], key: '', pattern: new RegExp(`(?<![A-Za-z0-9])\\d{${m[0].length}}(?![A-Za-z0-9])`, 'g') };
+  }
+  return null;
+}
+
+/** IDs of the same kind as the branch's in a message. */
+function storyIds(text, own) {
+  return [...text.matchAll(own.pattern)].map((m) => (own.key ? `${own.key}-${m[1]}` : m[0])).filter((id) => own.key || !isDate(id));
+}
 
 // Matched against one simple command (see simpleCommands), from its start; group 1 names it.
 const TEST_COMMAND =

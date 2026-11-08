@@ -247,7 +247,7 @@
         },
         "carrycontext.handoffLimit": {
           "type": "number",
-          "default": 50,
+          "default": 10,
           "description": "How many versions of each session's handoff to keep in .carrycontext/handoffs (oldest are deleted first). Every session always keeps its latest handoff."
         },
         "carrycontext.redact.enabled": {

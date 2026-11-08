@@ -139,6 +139,21 @@ test('only commands that run count, not test commands written inside strings, he
   assert.deepEqual(claims, []);
 });
 
+test('work on another story than the branch is for gets a warning', () => {
+  const story = (branch, ...requests) => verifyClaims([], { cwd: env.project(), git: null, branch, requests }).filter((c) => c.label.startsWith('story '));
+  // Story 24173551's work saved on the branch for 24114362.
+  const [flag] = story('feature/24114362', 'Add the Outlook utilities for 24173551');
+  assert.equal(flag.status, 'unverified', 'a warning, not a contradiction');
+  assert.equal(flag.label, 'story 24173551 discussed on `feature/24114362`');
+  assert.match(flag.evidence, /this branch is for story 24114362/);
+  assert.deepEqual(story('feature/24114362', 'For 24114362 we need 24173551 merged first'), [], "the branch's own story comes up: a cross-reference");
+  assert.deepEqual(story('feature/24114362', 'Ship by 20261107, see ticket 123456'), [], 'dates and numbers of another length are not story IDs');
+  assert.deepEqual(story('main', 'Fix 24173551'), [], 'no ID in the branch name');
+  assert.equal(story('bugfix/ABC-123-login', 'Now abc-456: the logout bug')[0].label, 'story ABC-456 discussed on `bugfix/ABC-123-login`');
+  assert.deepEqual(story('bugfix/ABC-123-login', 'Also see XYZ-9'), [], "another project's key");
+  assert.deepEqual(story('release/20261107', 'Fix 20261108'), [], 'a date in the branch name is not an ID');
+});
+
 test('mentioned commits are checked to exist', { skip: skipGit }, () => {
   const repo = env.project({ git: true });
   const sha = git(repo, 'rev-parse', '--short', 'HEAD');

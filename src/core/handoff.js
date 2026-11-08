@@ -151,7 +151,8 @@ async function writeBranchHandoff({ cwd, branch, current, messages, sessions, so
   const isCurrent = branch === current;
   const view = isCurrent ? gitView(cwd, ownFiles(cwd)) : null;
   const repo = view ? repoState(cwd, view) : '';
-  const claims = isCurrent && config.verify?.enabled !== false ? verifyClaims(messages, { cwd, git: view }) : [];
+  const requests = messages.filter((m) => m.role === 'user').map((m) => m.text);
+  const claims = isCurrent && config.verify?.enabled !== false ? verifyClaims(messages, { cwd, git: view, branch, requests }) : [];
   const verification = renderClaims(claims);
   const groundTruth = [repo, verification && `Verification of the session's claims:\n${verification}`].filter(Boolean).join('\n\n');
 
@@ -167,7 +168,7 @@ async function writeBranchHandoff({ cwd, branch, current, messages, sessions, so
       warning = `Summarizer failed, used heuristic instead: ${e.message}`;
     }
   }
-  sections ||= heuristicSections(messages, prev);
+  sections ||= heuristicSections(messages, prev, cwd);
   sections['Repository state'] = repo || prev['Repository state'] || '';
   sections.Verification = verification || (isCurrent ? '' : prev.Verification || '');
   // Contradicted claims become the first next steps, so the next assistant fixes them instead

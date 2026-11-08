@@ -4,6 +4,20 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- **Story check:** when the branch name has a story ID (`feature/24114362`, `bugfix/ABC-123-…`) and your messages mention another ID of the same kind but never the branch's own, Verification warns: "⚠️ story 24173551 discussed on `feature/24114362`: this branch is for story 24114362". Work on one story had been landing on another story's branch unnoticed. Dates and numbers of other lengths aren't treated as IDs.
+- **The hooks reminder comes back.** It asked once per workspace, ever, so one dismissal meant chats were never saved on compact or session end and new chats didn't load the handoff. It now asks when the folder has Claude Code chats and no hooks; **Not now** asks again a week later, and **Don't ask again** stops for that workspace. If you dismissed it before, you'll be asked once more.
+
+### Changed
+
+- **Each session keeps 10 versions by default, down from 50.** Every new request in a long session saves a version, so a busy branch could hold over 50 near-identical files. On the next save, sessions with more than 10 keep their newest 10; each session's latest is always kept. Set `carrycontext.handoffLimit` to keep more.
+
+### Fixed
+
+- **"Files & code" listed files outside the project,** such as scratch folders, `/tmp` and the assistant's memory files. It now lists only the project's files.
+- Rows of a markdown table you pasted were picked up as Key decisions when a cell said "must" or "never". Table rows are now skipped.
+
 ## [0.7.1] - 2026-11-02
 
 ### Fixed
