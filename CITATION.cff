@@ -8,8 +8,8 @@ authors:
 repository-code: "https://github.com/SonawaneMayur/carrycontext"
 url: "https://github.com/SonawaneMayur/carrycontext"
 license: MIT
-version: 0.7.2
-date-released: 2026-11-07
+version: 0.7.3
+date-released: 2026-11-08
 keywords:
   - vscode-extension
   - llm

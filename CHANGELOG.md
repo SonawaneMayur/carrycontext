@@ -4,6 +4,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.7.3] - 2026-11-08
+
 ### Added
 
 - **Move a Question to Another Chat…:** asked something in the wrong chat? Pick the question (it takes the replies up to your next question with it) and move it to a new chat (its own handoff, plus a prompt on your clipboard), into another branch's handoff under **Side questions**, or nowhere. The chat it left is saved again without it and keeps it out on later saves. Claude Code's own chat history isn't changed: run `/clear` in that chat to make it forget the question too.
@@ -181,7 +183,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.2...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.3...HEAD
+[0.7.3]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.1...v0.7.2
 [0.7.1]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.0...v0.7.1
 [0.7.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.6.3...v0.7.0
