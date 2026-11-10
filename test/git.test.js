@@ -14,6 +14,21 @@ test('currentBranch is null outside git', () => {
   assert.equal(g.currentBranch(env.project()), null);
 });
 
+test('story folders (git worktrees): the main folder is found from git files, branches are added safely', { skip }, () => {
+  const main = env.project({ git: true });
+  const story = path.join(path.dirname(main), `${path.basename(main)}-24173551`);
+  assert.equal(g.mainFolder(main), main, 'the main folder is its own');
+  assert.equal(g.addWorktree(main, story, 'feature/24173551', 'main'), null);
+  assert.equal(g.mainFolder(story), fs.realpathSync(main), 'a story folder finds its main folder');
+  assert.equal(g.currentBranch(story), 'feature/24173551');
+  assert.throws(() => git(story, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{u}'), 'no upstream: it never pushes into its base');
+  assert.match(g.addWorktree(main, `${story}-again`, 'feature/24173551', 'main'), /already|checked out|used by worktree/, "git's own message when the branch is open elsewhere");
+  assert.equal(g.validBranchName(main, 'feature/24173551-outlook'), true);
+  assert.equal(g.validBranchName(main, 'bad..name'), false);
+  assert.equal(g.defaultBase(main), 'main');
+  assert.ok(g.fetchBase(main, 'main'), 'no remote here: fetching fails with a message, nothing else happens');
+});
+
 test('localBranches lists local branches, most recently committed first', { skip }, () => {
   const repo = env.project({ git: true });
   git(repo, 'checkout', '-q', '-b', 'feature/a');

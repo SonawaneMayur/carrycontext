@@ -173,6 +173,51 @@ function localBranches(cwd) {
   return out ? out.split('\n').filter(Boolean) : [];
 }
 
+/**
+ * The project's main folder. For a story folder made with `git worktree add` it is the main
+ * checkout, found from git's own files without running git; otherwise `cwd` itself.
+ */
+function mainFolder(cwd) {
+  const dir = gitDir(cwd);
+  const common = dir && readText(path.join(dir, 'commondir'));
+  if (!common) return cwd; // not a worktree
+  const commonDir = path.resolve(dir, common.trim());
+  return path.basename(commonDir) === '.git' ? path.dirname(commonDir) : cwd; // a bare repo has no main folder
+}
+
+/** The branch new stories start from: origin's default branch, else main/master/develop. */
+const defaultBase = (cwd) => (gitAvailable() ? baseBranch(cwd, '') || null : null);
+
+/** Whether `name` is a valid branch name, by git's own rules. */
+const validBranchName = (cwd, name) => gitAvailable() && git(cwd, ['check-ref-format', '--branch', name]) !== null;
+
+const branchExists = (cwd, name) => git(cwd, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`]) !== null;
+
+/** Update origin's copy of `base`, so a new branch starts from the latest. Touches no files or branches of yours. */
+function fetchBase(cwd, base) {
+  try {
+    execFileSync('git', ['fetch', '--quiet', 'origin', base], { cwd, timeout: 60000, stdio: ['ignore', 'ignore', 'pipe'] });
+    return null;
+  } catch (e) {
+    return String(e.stderr || e.message).trim().split('\n').pop() || 'git fetch failed';
+  }
+}
+
+/**
+ * Check out `branch` in a new folder (a git worktree). An existing branch is checked out as it is;
+ * a new one starts from `from`. Returns git's error message, or null.
+ */
+function addWorktree(cwd, folder, branch, from) {
+  // --no-track: a story branch made from origin/develop mustn't push into develop.
+  const args = branchExists(cwd, branch) ? ['worktree', 'add', folder, branch] : ['worktree', 'add', '--no-track', '-b', branch, folder, from];
+  try {
+    execFileSync('git', args, { cwd, timeout: 60000, stdio: ['ignore', 'ignore', 'pipe'] });
+    return null;
+  } catch (e) {
+    return String(e.stderr || e.message).trim().split('\n').pop() || 'git worktree add failed';
+  }
+}
+
 const STATUS_LABELS = { M: 'modified', A: 'added', D: 'deleted', R: 'renamed', C: 'copied', '??': 'untracked' };
 const MAX_LIST = 25;
 
@@ -266,4 +311,4 @@ function repoState(cwd, view = gitView(cwd)) {
   return `_Read from git when this handoff was written. Check it again before relying on it._\n\n${lines.join('\n')}`;
 }
 
-module.exports = { gitDir, headFile, currentBranch, branchAt, contains, isTracked, localBranches, storyId, isDate, branchSlug, gitAvailable, gitView, repoState, excludeLocally, includeLocally };
+module.exports = { gitDir, headFile, currentBranch, branchAt, contains, isTracked, localBranches, mainFolder, defaultBase, validBranchName, branchExists, fetchBase, addWorktree, storyId, isDate, branchSlug, gitAvailable, gitView, repoState, excludeLocally, includeLocally };

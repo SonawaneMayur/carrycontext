@@ -4,6 +4,17 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- **Parallel stories, each in its own folder.** **Start Stories in Their Own Folders…**, or saying so in a Claude Code chat (the new **start-story** skill shows the plan and asks first), gives each story a branch from its base (fetched first), a folder next to the project (a git worktree), a handoff saying which story it is, and a new window with a new Claude chat. Nothing in the folder you're in changes, and a branch made from origin doesn't track it, so it never pushes into its base.
+- **One CarryContext per project.** Every story folder shares the main folder's handoffs per branch, their versions and the usage ledger: deleting a story folder loses nothing, and one panel and one Usage report cover every story. Each folder keeps its own active handoff. Story folders made with 0.8 move their data into the shared store once, backed up first. Two windows saving the ledger at once no longer overwrite each other.
+- **Daily backups** of that shared data to `~/.carrycontext/backups`, readable only by you, the newest 7 kept, with **Back Up Now** and **Restore From Backup…** (which backs up the current state first). Settings `carrycontext.backup.folder` and `carrycontext.backup.keep` are user-only; a folder that syncs to the cloud gets a warning.
+- `carrycontext start-story` in the CLI (`--dry-run` shows the plan), and a `cli` passthrough in the Claude Code hook script so the skill can run it.
+
+### Changed
+
+- `AGENTS.md` and `GEMINI.md` that hold only CarryContext's pointer are kept out of git, like Copilot's file; one with your own text, or one in git, is left alone. A finished story folder can then be removed without `--force`.
+
 ## [0.8.0] - 2026-11-08
 
 ### Added

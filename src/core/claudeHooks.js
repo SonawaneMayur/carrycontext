@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { paths, updateHandoff, syncTargets } = require('./handoff');
 const { writeFile, readJson, readText, listFiles, mtime, shellQuote } = require('./util');
+const { excludeLocally } = require('./git');
 const claude = require('../providers/claude');
 
 const HOOK_MARK = '.carrycontext/hooks/claude-hook.sh';
@@ -67,6 +68,11 @@ case "$1" in
     cat > "$PAYLOAD"
     run_cli hook claude --payload "$PAYLOAD" >>"$CC/hook.log" 2>&1
     exit 0 ;;
+  cli)
+    # Any CarryContext command, with whichever Node runtime is available (used by the start-story skill).
+    shift
+    run_cli "$@"
+    exit $? ;;
 esac
 `;
 }
@@ -81,6 +87,12 @@ function installClaudeHooks(cwd, cliPath, nodePath) {
   // Refresh our own command file, but leave it alone if the user rewrote it.
   const current = readText(cmd);
   if (current == null || current.includes('so any assistant (Claude, Codex')) writeFile(cmd, COMPACT_ALL_COMMAND);
+
+  // The start-story skill: Claude uses it when you say you're starting stories. Kept out of git.
+  const skill = path.join(cwd, '.claude', 'skills', 'start-story', 'SKILL.md');
+  const ours = readText(skill);
+  if (ours == null || ours.includes(SKILL_MARK)) writeFile(skill, START_STORY_SKILL);
+  excludeLocally(cwd, [skill]);
 }
 
 function writeHookScript(cwd, cliPath, nodePath) {
@@ -156,6 +168,28 @@ function pendingPayloads(cwd, minAgeMs = 0) {
   const now = Date.now();
   return listFiles(paths(cwd).inbox, (f) => f.endsWith('.json')).filter((f) => now - mtime(f) >= minAgeMs);
 }
+
+const SKILL_MARK = 'carrycontext start-story';
+const START_STORY_SKILL = `---
+name: start-story
+description: Start one or more stories, tickets or features, each on its own branch in its own folder and VS Code window with a new chat. Use when the user says they are starting new work, a new story or ticket, or a sprint (for example "let's start on 24173551", "new sprint: stories A, B and C", "pick up ABC-123 off release/2026.11").
+---
+
+<!-- ${SKILL_MARK}: written by CarryContext. If you edit this skill, delete this line so CarryContext keeps your version. -->
+
+# Start stories in their own folders
+
+Each story gets its own branch from the right base, its own folder (a git worktree next to this project), and its own VS Code window with a new chat that starts from the story's handoff. Nothing in this folder is switched, stashed, committed or deleted.
+
+1. From the user's message, list each story's ID and a short title (2 to 5 words). Note any story that names its own base branch ("off release/2026.11"). Ask about anything unclear; never invent an ID.
+2. Preview each story without changing anything:
+   \`sh "$CLAUDE_PROJECT_DIR/.carrycontext/hooks/claude-hook.sh" cli start-story --id <ID> --title "<short title>" [--base <branch>] --dry-run\`
+3. Show the user one table with each story's branch, base and folder, and ask them to confirm or change anything. Don't continue without a clear yes.
+4. For each confirmed story, run the same command without \`--dry-run\`. It fetches the base, creates the branch and the folder, and asks VS Code to open it in a new window with a new chat.
+5. Report what was created, and any story that failed with its message. Don't retry with different names unless the user asks.
+
+Never switch branches, stash, commit, push or delete anything yourself while doing this.
+`;
 
 const COMPACT_ALL_COMMAND = `---
 description: Write a full handoff of this session to .carrycontext/handoff.md so any assistant (Claude, Codex, Gemini, Copilot, ...) can resume it

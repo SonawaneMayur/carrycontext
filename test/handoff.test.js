@@ -143,8 +143,14 @@ test('in git: provider copies are kept out of git through .git/info/exclude, onc
   for (const copy of copies) assert.equal(exclude.split('\n').filter((l) => l === `/${copy}`).length, 1, copy);
   const untracked = git(cwd, 'status', '--porcelain', '--untracked-files=all');
   for (const copy of copies) assert.ok(!untracked.includes(copy), `${copy} is not offered to git`);
-  assert.match(untracked, /AGENTS\.md/, 'instruction files are left to the user');
+  assert.doesNotMatch(untracked, /AGENTS\.md|GEMINI\.md/, "instruction files only CarryContext wrote (its pointer) aren't offered to git either");
   assert.equal(read(path.join(cwd, '.gitignore')), 'node_modules/\n', "the user's .gitignore is untouched");
+
+  // Your own text makes it your file: it shows up in git again, so your text gets committed.
+  fs.appendFileSync(path.join(cwd, 'AGENTS.md'), '\nTeam rule: run the tests before pushing.\n');
+  await compact(cwd, cfg);
+  assert.match(git(cwd, 'status', '--porcelain', '--untracked-files=all'), /AGENTS\.md/);
+  assert.match(read(path.join(cwd, 'AGENTS.md')), /Team rule: run the tests before pushing\./);
 });
 
 test('a handoff warns when the chat is about another story than its branch', { skip: !hasGit && 'git missing' }, async () => {
@@ -224,6 +230,82 @@ test("Move a Question to another branch: listed under Side questions there, that
   await h.updateHandoff({ cwd, sessions: [claudeSession(searchChat)], trigger: 't', config: config(), getApiKey: noKey });
   assert.match(search(), /Add search filters/);
   assert.match(search(), /## Side questions\n\n- .*partial words/);
+});
+
+const storyFolder = (main, id) => path.join(path.dirname(main), `${path.basename(main)}-${id}`);
+
+test('story folders share one store: each keeps its own active handoff, and deleting one loses nothing', { skip: !hasGit && 'git missing' }, async () => {
+  const main = env.project({ git: true });
+  const store = path.join(fs.realpathSync(main), '.carrycontext');
+  for (const [id, ask] of [['24114362', 'Build the invoice PDF'], ['24173551', 'Add the Outlook export']]) {
+    const folder = storyFolder(main, id);
+    git(main, 'worktree', 'add', '-q', '-b', `feature/${id}`, folder);
+    const file = writeClaude(folder, `s${id}`, [{ role: 'user', text: ask, branch: `feature/${id}` }, { role: 'assistant', text: 'Started', branch: `feature/${id}` }]);
+    await h.updateHandoff({ cwd: folder, sessions: [claudeSession(file)], trigger: 't', config: config(), getApiKey: noKey });
+  }
+  const invoice = storyFolder(main, '24114362');
+  assert.match(read(path.join(store, 'branches', 'feature__24114362', 'handoff.md')), /Build the invoice PDF/);
+  assert.match(read(path.join(store, 'branches', 'feature__24173551', 'handoff.md')), /Add the Outlook export/);
+  assert.deepEqual([...new Set(h.listSavedHandoffs(main).map((s) => s.branch))].sort(), ['feature__24114362', 'feature__24173551'], 'the main folder sees every story');
+  assert.match(read(path.join(invoice, '.carrycontext', 'handoff.md')), /invoice PDF/);
+  assert.doesNotMatch(read(path.join(invoice, '.carrycontext', 'handoff.md')), /Outlook/, 'each folder reads only its own story');
+  assert.ok(!fs.existsSync(path.join(invoice, '.carrycontext', 'branches')), 'no store of its own');
+
+  git(main, 'worktree', 'remove', '--force', invoice);
+  assert.ok(!fs.existsSync(invoice));
+  assert.match(read(path.join(store, 'branches', 'feature__24114362', 'handoff.md')), /Build the invoice PDF/, 'still there after the folder is gone');
+  assert.ok(h.listSavedHandoffs(main).some((s) => s.branch === 'feature__24114362'));
+});
+
+test('a story folder made with 0.8 moves its own data into the shared store once, backed up first', { skip: !hasGit && 'git missing' }, () => {
+  const main = env.project({ git: true });
+  const folder = storyFolder(main, 'old');
+  git(main, 'worktree', 'add', '-q', '-b', 'feature/old', folder);
+  const local = path.join(folder, '.carrycontext');
+  fs.mkdirSync(path.join(local, 'branches', 'feature__old'), { recursive: true });
+  fs.writeFileSync(path.join(local, 'branches', 'feature__old', 'handoff.md'), '# old handoff\n');
+  fs.mkdirSync(path.join(local, 'handoffs', 'feature__old'), { recursive: true });
+  fs.writeFileSync(path.join(local, 'handoffs', 'feature__old', 'claude-s--a-version.md'), '# a version\n');
+  fs.writeFileSync(path.join(local, 'usage.json'), JSON.stringify({ stamp: 'x', sessions: { a: { provider: 'claude', size: 10, rows: [] } } }));
+  const store = path.join(fs.realpathSync(main), '.carrycontext');
+  fs.mkdirSync(store, { recursive: true });
+  fs.writeFileSync(path.join(store, 'usage.json'), JSON.stringify({ stamp: 'x', sessions: { b: { provider: 'claude', size: 5, rows: [] } } }));
+
+  assert.equal(h.adoptLocalStore(folder, config()), true);
+  assert.equal(read(path.join(store, 'branches', 'feature__old', 'handoff.md')), '# old handoff\n');
+  assert.ok(fs.existsSync(path.join(store, 'handoffs', 'feature__old', 'claude-s--a-version.md')));
+  assert.deepEqual(Object.keys(JSON.parse(read(path.join(store, 'usage.json'))).sessions).sort(), ['a', 'b'], 'both ledgers kept');
+  assert.ok(!fs.existsSync(path.join(local, 'branches')) && !fs.existsSync(path.join(local, 'usage.json')), 'moved, not left behind');
+  assert.ok(require('../src/core/backup').listBackups(folder, config()).some((b) => /-from-/.test(b.name)), 'backed up first');
+  assert.equal(h.adoptLocalStore(folder, config()), false, 'only once');
+});
+
+test('start a story: its own branch from the base, its own folder and a handoff saying which story; nothing here changes', { skip: !hasGit && 'git missing' }, async () => {
+  const main = env.project({ git: true });
+  const file = writeClaude(main, 'm', [{ role: 'user', text: 'Set up CI', branch: 'main' }, { role: 'assistant', text: 'Done', branch: 'main' }]);
+  await h.updateHandoff({ cwd: main, sessions: [claudeSession(file)], trigger: 't', config: config(), getApiKey: noKey });
+
+  const plan = h.storyPlan(main, config(), { id: '24173551', title: 'Outlook export!' });
+  assert.deepEqual([plan.branch, plan.base, path.basename(plan.folder), plan.exists], ['feature/24173551-outlook-export', 'main', `${path.basename(main)}-24173551`, false]);
+  const res = h.startStory(main, config(), plan);
+  assert.match(res.note, /Couldn't fetch main .* so it starts from your local main/, 'no remote here: it says so');
+  assert.equal(git(plan.folder, 'rev-parse', '--abbrev-ref', 'HEAD'), 'feature/24173551-outlook-export');
+  assert.equal(git(main, 'rev-parse', '--abbrev-ref', 'HEAD'), 'main', 'this folder stays on its branch');
+  const doc = read(path.join(fs.realpathSync(main), '.carrycontext', 'branches', 'feature__24173551-outlook-export', 'handoff.md'));
+  assert.match(doc, /## Goal\n\nStory 24173551: Outlook export!/);
+  assert.match(doc, /## Background\n\nBranched from `main`[\s\S]*Set up CI/, "the base branch's context, not the current work's");
+  const requests = path.join(main, '.carrycontext', 'requests');
+  assert.equal(JSON.parse(read(path.join(requests, fs.readdirSync(requests)[0]))).folder, plan.folder, 'VS Code is asked to open it');
+  assert.ok(fs.existsSync(path.join(plan.folder, '.carrycontext', 'start-chat')), 'and to start a chat there');
+
+  assert.throws(() => h.startStory(main, config(), plan), /already exists, so it was left alone/);
+  git(main, 'worktree', 'remove', '--force', plan.folder);
+  const again = h.storyPlan(main, config(), { id: '24173551', title: 'Outlook export!' });
+  assert.equal(again.exists, true);
+  h.startStory(main, config(), again);
+  assert.equal(git(again.folder, 'rev-parse', '--abbrev-ref', 'HEAD'), 'feature/24173551-outlook-export', 'an existing branch is checked out as it is');
+  assert.equal(h.storyPlan(main, config({ stories: { branchPattern: 'story/{id}' } }), { id: 'ABC-12', title: 'Fix login' }).branch, 'story/ABC-12');
+  assert.equal(h.storyPlan(main, config(), { id: '24190000', base: 'release/2026.11' }).base, 'release/2026.11', 'a base per story');
 });
 
 const SECRET_DOC = '<!-- carrycontext:handoff v1 -->\n# Handoff: app\n\n## Goal\n\nShip the secret plan\n';

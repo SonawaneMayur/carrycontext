@@ -4,14 +4,15 @@ const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const { saveConfig, normalizeConfig } = require('./core/config');
-const { paths, loadState, gatherSessions, unsavedSessions, recentQuestions, moveQuestion, updateHandoff, activateBranch, syncTargets, resumePrompt } = require('./core/handoff');
+const { paths, loadState, gatherSessions, unsavedSessions, recentQuestions, moveQuestion, updateHandoff, activateBranch, syncTargets, resumePrompt, adoptLocalStore, storyPlan, startStory } = require('./core/handoff');
+const { backup, listBackups, restore, today } = require('./core/backup');
 const { catalog, search } = require('./core/catalog');
 const { usageSummary, renderReport, renderCsv } = require('./core/usage');
-const { currentBranch, headFile, localBranches } = require('./core/git');
+const { currentBranch, headFile, localBranches, defaultBase } = require('./core/git');
 const { installClaudeHooks, updateHookSettings, writeHookScript, hooksInstalled, processPayload, pendingPayloads } = require('./core/claudeHooks');
 const { getProvider, listProviders } = require('./providers');
 const { getLlm, listLlms } = require('./llm');
-const { ago, readText, tildify, shellQuote: posixQuote } = require('./core/util');
+const { ago, readText, readJson, listFiles, mtime, tildify, shellQuote: posixQuote } = require('./core/util');
 const { HandoffTree } = require('./sidebar');
 
 const POLL_MS = 30000;
@@ -63,6 +64,8 @@ function activate(context) {
         machineWatts: c.get('usage.machineWatts', 15),
         electricityPrice: c.get('usage.electricityPrice', 0),
       },
+      backup: { folder: user('backup.folder', ''), keep: user('backup.keep', 7) },
+      stories: { branchPattern: c.get('stories.branchPattern', 'feature/{id}-{title}') },
     });
   };
 
@@ -178,10 +181,56 @@ function activate(context) {
   // Auto-update: save each conversation with unsaved work once it has been idle long enough.
   async function poll() {
     const dir = cwd();
+    if (dir) dailyBackup(dir);
     const c = config();
     if (!dir || busy || !c.autoUpdate.enabled) return;
     await drainInbox(10000);
     await saveUnsaved(dir, c, false);
+  }
+
+  // Once a day, the first time CarryContext runs that day, back up the project's shared store.
+  let backedUp = '';
+  let warnedSynced = false;
+  function dailyBackup(dir) {
+    if (backedUp === today()) return;
+    try {
+      const res = backup(dir, config());
+      backedUp = today();
+      if (res.made) output.appendLine(`${new Date().toISOString()} backed up to ${tildify(res.dir || '')}`);
+      if (res.warning && !warnedSynced) {
+        warnedSynced = true;
+        vscode.window.showWarningMessage(res.warning);
+      }
+    } catch (e) {
+      output.appendLine(`[error] backup: ${e.message}`);
+    }
+  }
+
+  // Open each story folder that start-story asked for in a new window. Notes older than 10 minutes
+  // (VS Code was closed when the story started) are dropped rather than opening windows later.
+  function openRequestedFolders(dir) {
+    for (const file of listFiles(paths(dir).requests, (f) => f.endsWith('.json'))) {
+      const request = readJson(file, null);
+      const age = Date.now() - mtime(file);
+      fs.rmSync(file, { force: true });
+      if (!request?.folder || age > 10 * 60000 || !fs.existsSync(request.folder)) continue;
+      output.appendLine(`${new Date().toISOString()} opening ${request.branch} in a new window`);
+      vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(request.folder), { forceNewWindow: true });
+    }
+  }
+
+  // A folder start-story just made: start a new Claude Code chat, which loads the story's handoff.
+  async function startChatIfAsked(dir) {
+    const marker = path.join(paths(dir).dir, 'start-chat');
+    const branch = readText(marker)?.trim();
+    if (branch === undefined) return;
+    fs.rmSync(marker, { force: true });
+    await new Promise((r) => setTimeout(r, 1500)); // let Claude Code finish starting
+    if ((await vscode.commands.getCommands(true)).includes('claude-vscode.newConversation')) {
+      await vscode.commands.executeCommand('claude-vscode.newConversation');
+    } else {
+      vscode.window.showInformationMessage(`CarryContext: ${branch} is ready. Open your AI assistant here; its handoff says which story this is.`);
+    }
   }
 
   /** Save conversations with unsaved work, each on its own: idle ones, or on a branch switch every one. */
@@ -208,6 +257,9 @@ function activate(context) {
         { label: '$(search) Find Handoff…', detail: 'Search saved handoffs by title, branch or any text inside', command: 'carrycontext.openHandoff' },
         { label: '$(comment-discussion) Create Handoff From a Session…', detail: 'Pick specific sessions', command: 'carrycontext.compactSession' },
         { label: '$(arrow-right) Move a Question…', detail: 'Take a question out of its chat: to a new chat, another branch, or nowhere', command: 'carrycontext.moveQuestion' },
+        { label: '$(rocket) Start Stories in Their Own Folders…', detail: 'A branch, folder and window for each story, from its base', command: 'carrycontext.startStories' },
+        { label: '$(archive) Back Up Now', detail: 'Copy this project’s handoffs and usage to your backup folder', command: 'carrycontext.backupNow' },
+        { label: '$(history) Restore From Backup…', detail: 'Put a daily backup back (what’s there now is backed up first)', command: 'carrycontext.restoreBackup' },
         { label: '$(clippy) Copy Resume Prompt', command: 'carrycontext.copyResumePrompt' },
         { label: '$(graph) Usage Report', detail: 'Tokens, models, active time and estimated cost, from the logs on this computer', command: 'carrycontext.usageReport' },
         { label: '', kind: vscode.QuickPickItemKind.Separator },
@@ -299,6 +351,60 @@ function activate(context) {
       if (!items.length) return vscode.window.showInformationMessage('No sessions found for this folder.');
       const picked = await vscode.window.showQuickPick(items, { canPickMany: true, placeHolder: 'Sessions to include in the handoff' });
       if (picked?.length) await run('Create handoff', () => compact(picked, 'vscode:manual'));
+    },
+    // A story in its own folder (git worktree), branch and window. Asks before creating anything;
+    // nothing in this folder is switched or changed. (In a chat, the start-story skill does the same.)
+    'carrycontext.startStories': async () => {
+      const dir = cwd();
+      if (!dir) return;
+      const id = await vscode.window.showInputBox({ prompt: 'Story or ticket ID', placeHolder: '24173551 or ABC-123' });
+      if (!id?.trim()) return;
+      const title = (await vscode.window.showInputBox({ prompt: 'A short title (2 to 5 words), for the branch name', placeHolder: 'Outlook export' })) ?? '';
+      const suggested = defaultBase(dir);
+      const bases = [...new Set([suggested, ...localBranches(dir)].filter(Boolean))].map((b) => ({ label: b, description: b === suggested ? 'default' : '' }));
+      const base = (await vscode.window.showQuickPick(bases, { placeHolder: 'Start the story from which branch?' }))?.label;
+      if (!base) return;
+      const plan = storyPlan(dir, config(), { id: id.trim(), title: title.trim(), base });
+      const ok = await vscode.window.showInformationMessage(
+        `Start story ${plan.id || plan.branch}?`,
+        { modal: true, detail: `Branch: ${plan.branch}${plan.exists ? ' (exists: checked out as it is)' : ''}\nFrom: ${plan.exists ? 'the existing branch' : `${base}, fetched from origin first`}\nFolder: ${tildify(plan.folder)}\n\nOpens in a new window with a new chat. Nothing in this folder changes.` },
+        'Start',
+      );
+      if (ok !== 'Start') return;
+      const res = await run('Start story', async () => {
+        const started = startStory(dir, config(), plan);
+        if (hooksInstalled(dir)) installClaudeHooks(plan.folder, cliPath, process.execPath);
+        return started;
+      });
+      if (res?.note) vscode.window.showWarningMessage(`CarryContext: ${res.note}`);
+    },
+    'carrycontext.backupNow': () => {
+      const dir = cwd();
+      if (!dir) return;
+      const res = backup(dir, config(), { force: true });
+      if (res.warning) vscode.window.showWarningMessage(res.warning);
+      vscode.window.showInformationMessage(res.made ? `CarryContext: backed up to ${tildify(res.dir || '')}` : 'CarryContext: nothing to back up yet.');
+    },
+    'carrycontext.restoreBackup': async () => {
+      const dir = cwd();
+      if (!dir) return;
+      const backups = listBackups(dir, config());
+      if (!backups.length) return vscode.window.showInformationMessage('CarryContext: no backups of this project yet.');
+      const pick = await vscode.window.showQuickPick(
+        backups.map((b) => ({ label: b.name, description: /before-restore|from-/.test(b.name) ? 'made automatically before a change' : 'daily', backup: b })),
+        { placeHolder: 'Restore which backup?' },
+      );
+      if (!pick) return;
+      const ok = await vscode.window.showWarningMessage(
+        `Restore the ${pick.label} backup?`,
+        { modal: true, detail: "It replaces this project's handoffs per branch, their versions and the usage ledger. What's there now is backed up first, so you can undo this." },
+        'Restore',
+      );
+      if (ok !== 'Restore') return;
+      const res = restore(dir, config(), pick.label);
+      activateBranch(dir, config());
+      refreshStatus();
+      vscode.window.showInformationMessage(`CarryContext: restored ${pick.label}. The state before it is in ${tildify(res.safety || '')}.`);
     },
     // A question asked in the wrong chat: take it, and the replies to it, out of that chat's handoff
     // and put it where it belongs. Claude Code's own chat history is never changed.
@@ -502,7 +608,16 @@ function activate(context) {
     }
   }
   if (dir) {
+    // A story folder made with CarryContext 0.8 kept its own data; it moves into the shared store once.
+    try {
+      if (adoptLocalStore(dir, config())) output.appendLine(`${new Date().toISOString()} moved this folder's handoffs and usage into the project's shared store`);
+    } catch (e) {
+      output.appendLine(`[error] moving this folder's data to the shared store: ${e.message}`);
+    }
     persistConfig();
+    dailyBackup(dir);
+    openRequestedFolders(dir);
+    startChatIfAsked(dir);
     // The extension path and Node path change on updates, so keep the hook script current.
     if (hooksInstalled(dir)) {
       writeHookScript(dir, cliPath, process.execPath);
@@ -516,6 +631,10 @@ function activate(context) {
     watcher.onDidCreate(refreshStatus);
     watcher.onDidDelete(refreshStatus);
     context.subscriptions.push(watcher);
+    // "Open this story's folder" notes, left by start-story (from a chat or the command).
+    const requests = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(dir, '.carrycontext/requests/*.json'));
+    requests.onDidCreate(() => openRequestedFolders(dir));
+    context.subscriptions.push(requests);
     drainInbox(0);
     const timer = setInterval(() => poll().catch((e) => output.appendLine(`[error] poll: ${e.message}`)), POLL_MS);
     context.subscriptions.push({ dispose: () => clearInterval(timer) });

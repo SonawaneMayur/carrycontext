@@ -7,13 +7,32 @@
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { dataDir } = require('./config');
+const { dataDir, storeDir } = require('./config');
 const { writeFile, readText, readJson, mtime, upsertManagedBlock, rel } = require('./util');
 const { sanitize } = require('./sanitize');
 const { listSaved, catalog, pruneHistory } = require('./catalog');
 const { SECTIONS, parseSections, heuristicSections, llmSections, shortText, mergeDecisions } = require('./summarize');
 const { verifyClaims, countClaims, renderClaims, summaryLine } = require('./claims');
-const { currentBranch, branchAt, contains, isTracked, branchSlug, gitView, repoState, excludeLocally, includeLocally } = require('./git');
+const {
+  currentBranch,
+  branchAt,
+  contains,
+  isTracked,
+  branchSlug,
+  gitView,
+  repoState,
+  excludeLocally,
+  includeLocally,
+  gitAvailable,
+  mainFolder,
+  defaultBase,
+  validBranchName,
+  branchExists,
+  fetchBase,
+  addWorktree,
+  storyId,
+} = require('./git');
+const { backup, now, PARTS } = require('./backup');
 const { getProvider, listProviders } = require('../providers');
 const { getLlm } = require('../llm');
 
@@ -21,15 +40,23 @@ const RENDER_ORDER = ['Goal', 'Background', 'Current state', 'Other recent sessi
 const SIDE_QUESTIONS_KEPT = 5;
 const MOVED = 'Moved question'; // session name of a question moved out of its chat
 
+/**
+ * Where everything lives. The active handoff, state, inbox and hooks belong to this folder (its
+ * assistants read them); handoffs per branch and their versions are in the store, which every
+ * story folder of the project shares. Outside a story folder the two are the same.
+ */
 function paths(cwd) {
   const dir = dataDir(cwd);
+  const store = storeDir(cwd);
   return {
     dir,
+    store,
     handoff: path.join(dir, 'handoff.md'),
-    handoffs: path.join(dir, 'handoffs'),
-    branches: path.join(dir, 'branches'),
+    handoffs: path.join(store, 'handoffs'),
+    branches: path.join(store, 'branches'),
     state: path.join(dir, 'state.json'),
     inbox: path.join(dir, 'inbox'),
+    requests: path.join(dir, 'requests'),
   };
 }
 
@@ -379,6 +406,139 @@ function cleanDoc(doc, cwd, config) {
   return text.replace(/^(- \*\*Summarizer:\*\* .*)$/m, `$1\n${note}`);
 }
 
+/**
+ * Move a story folder's own handoffs and usage ledger into the shared store: CarryContext 0.8 kept
+ * them in each story folder (git worktree). Backs them up first, copies before removing, and never
+ * replaces a newer file.
+ * @returns {boolean} whether anything was moved
+ */
+function adoptLocalStore(cwd, config) {
+  const { dir, store } = paths(cwd);
+  if (dir === store) return false;
+  const parts = PARTS.filter((p) => fs.existsSync(path.join(dir, p)));
+  if (!parts.length) return false;
+  backup(cwd, config, { force: true, name: `${now()}-from-${path.basename(cwd).replace(/[^\w-]/g, '-')}`, from: dir });
+  for (const part of parts) {
+    const from = path.join(dir, part);
+    const to = path.join(store, part);
+    if (part === 'usage.json') mergeLedger(from, to);
+    else copyNewer(from, to);
+    fs.rmSync(from, { recursive: true, force: true });
+  }
+  return true;
+}
+
+/** Copy files that are missing or older at `to`, keeping their times. The catalog's index is rebuilt, not copied. */
+function copyNewer(from, to) {
+  for (const entry of fs.readdirSync(from, { withFileTypes: true })) {
+    const a = path.join(from, entry.name);
+    const b = path.join(to, entry.name);
+    if (entry.isDirectory()) copyNewer(a, b);
+    else if (entry.name !== 'index.json' && (!fs.existsSync(b) || mtime(a) > mtime(b))) {
+      fs.mkdirSync(to, { recursive: true });
+      fs.copyFileSync(a, b);
+      const s = fs.statSync(a);
+      fs.utimesSync(b, s.atime, s.mtime);
+    }
+  }
+}
+
+/** Add one usage ledger's sessions to another; for a session in both, the one counted from more of its log wins. */
+function mergeLedger(from, to) {
+  const mine = readJson(from, null);
+  const shared = readJson(to, null);
+  if (!mine?.sessions) return;
+  const sessions = { ...(shared?.sessions || {}) };
+  for (const [key, s] of Object.entries(mine.sessions)) if (!sessions[key] || (s.size || 0) > (sessions[key].size || 0)) sessions[key] = s;
+  writeFile(to, JSON.stringify({ ...(shared || mine), sessions }) + '\n');
+}
+
+/**
+ * What starting a story would do, without doing it: its branch (from carrycontext.stories.branchPattern
+ * unless given), the base it starts from, and its folder next to the project.
+ * @param {string} cwd
+ * @param {import('./config').Config} config
+ * @param {{id?: string, title?: string, base?: string, branch?: string}} story
+ */
+function storyPlan(cwd, config, { id = '', title = '', base = '', branch = '' }) {
+  const main = mainFolder(cwd);
+  const words = slugify(title, 40);
+  const name =
+    branch ||
+    config.stories.branchPattern
+      .replace('{id}', id)
+      .replace('{title}', title && words !== 'untitled' ? words : '')
+      .replace(/-+(?=\/|$)/g, '')
+      .replace(/-{2,}/g, '-');
+  const label = (storyId(name)?.id || id || branchSlug(name)).replace(/[^\w.-]/g, '-');
+  return {
+    id: id || storyId(name)?.id || '',
+    title,
+    branch: name,
+    base: base || defaultBase(cwd) || currentBranch(cwd) || 'main',
+    folder: path.join(path.dirname(main), `${path.basename(main)}-${label}`),
+    exists: gitAvailable() && branchExists(cwd, name),
+  };
+}
+
+/**
+ * Start a story in its own folder: a git worktree next to the project, on a new branch from the
+ * base (fetched first, so it starts from the latest; an existing branch is checked out as it is),
+ * with a handoff saying which story it is. Then asks VS Code to open it in a new window with a new
+ * chat. Nothing in this folder is switched, stashed, committed or deleted.
+ * @param {ReturnType<typeof storyPlan>} plan
+ * @param {{fetch?: boolean}} [opts]
+ * @returns {ReturnType<typeof storyPlan> & {from: string, note: string}}
+ */
+function startStory(cwd, config, plan, { fetch = true } = {}) {
+  if (!gitAvailable()) throw new Error('Starting a story needs git.');
+  if (!validBranchName(cwd, plan.branch)) throw new Error(`"${plan.branch}" isn't a valid branch name.`);
+  if (fs.existsSync(plan.folder)) throw new Error(`${rel(cwd, plan.folder)} already exists, so it was left alone.`);
+  let from = plan.base;
+  let note = '';
+  if (!plan.exists) {
+    // From origin's copy of the base when it can be fetched, else the local base.
+    const failed = fetch ? fetchBase(cwd, plan.base) : 'not fetched';
+    if (!failed) from = `origin/${plan.base}`;
+    else if (fetch) note = `Couldn't fetch ${plan.base} (${failed}), so it starts from your local ${plan.base}.`;
+  }
+  const failed = addWorktree(cwd, plan.folder, plan.branch, from);
+  if (failed) throw new Error(failed);
+  seedStory(cwd, config, plan);
+  // The VS Code window you're in opens the folder; that folder's window then starts a chat.
+  writeFile(path.join(paths(cwd).requests, `open-${Date.now()}-${crypto.randomBytes(3).toString('hex')}.json`), JSON.stringify({ folder: plan.folder, branch: plan.branch }) + '\n');
+  writeFile(path.join(dataDir(plan.folder), 'start-chat'), `${plan.branch}\n`);
+  ensureGitignore(plan.folder);
+  return { ...plan, from, note };
+}
+
+/**
+ * The new story's handoff, in the shared store: which story it is, and its base branch's context as
+ * background. Not the branch you're on: the story starts from its base, not from your current work.
+ */
+function seedStory(cwd, config, plan) {
+  const bp = branchPaths(cwd, plan.branch);
+  if (fs.existsSync(bp.handoff)) return;
+  const parentDoc = readText(branchPaths(cwd, plan.base).handoff);
+  const goal = [plan.id && `Story ${plan.id}`, plan.title].filter(Boolean).join(': ') || plan.branch;
+  const doc = renderDoc({
+    cwd: plan.folder,
+    branch: plan.branch,
+    sections: {
+      Goal: goal,
+      Background: parentDoc ? parseSections(inheritedDoc(plan.folder, plan.branch, plan.base, parentDoc)).Background : '',
+      'Current state': `_A new story on \`${plan.branch}\`, from \`${plan.base}\`. Nothing done yet._`,
+      'Next steps': `- Start on ${goal}.`,
+    },
+    sources: [],
+    trigger: `story:start-from:${plan.base}`,
+    summarizer: 'none',
+    session: plan.branch,
+    description: shortText(goal, 8),
+  });
+  writeFile(bp.handoff, cleanDoc(doc, plan.folder, config));
+}
+
 /** A branch's handoff before any work on it is saved, so no assistant reads another branch's context. */
 function emptyDoc(cwd, branch) {
   return renderDoc({
@@ -543,12 +703,12 @@ function syncTargets(cwd, config, doc = readText(paths(cwd).handoff)) {
     written.push(file);
     if (target.instructionsFile) {
       const instructions = target.instructionsFile(cwd);
-      // The whole handoff goes inline (Copilot) only into a file CarryContext alone writes, which
-      // then stays out of git like the copies. A file you or your team keep (in git, or with your
-      // own text) gets a pointer instead, so no conversation text lands in a commit.
-      const inline = target.inline && !isTracked(cwd, instructions) && !hasOtherText(readText(instructions));
-      upsertManagedBlock(instructions, inline ? doc : pointerBlock(rel(cwd, file)));
-      if (target.inline) (inline ? hidden : shown).push(instructions);
+      // A file CarryContext alone writes (AGENTS.md, GEMINI.md, Copilot's) stays out of git like
+      // the copies, and only then holds the whole handoff inline (Copilot). A file you or your team
+      // keep (in git, or with your own text) gets a pointer, so no conversation text lands in a commit.
+      const own = !isTracked(cwd, instructions) && !hasOtherText(readText(instructions));
+      upsertManagedBlock(instructions, target.inline && own ? doc : pointerBlock(rel(cwd, file)));
+      (own ? hidden : shown).push(instructions);
     }
   }
   excludeLocally(cwd, [...written, ...hidden]);
@@ -571,15 +731,18 @@ function resumePrompt(cwd, providerId) {
 
 // Handoffs can contain anything from a conversation, so they stay out of git for now. So does
 // usage.json, which holds the start of your most expensive questions.
-const GITIGNORED = ['handoff.md', 'handoffs/', 'branches/', 'inbox/', 'state.json', 'hook.log', 'usage.json'];
+const GITIGNORED = ['handoff.md', 'handoffs/', 'branches/', 'inbox/', 'requests/', 'start-chat', 'state.json', 'hook.log', 'usage.json'];
 
 /** Add any missing entries; lines the user added are kept. */
 function ensureGitignore(cwd) {
-  const file = path.join(paths(cwd).dir, '.gitignore');
-  const existing = readText(file) || '';
-  const lines = existing.split('\n').map((l) => l.trim());
-  const missing = GITIGNORED.filter((e) => !lines.includes(e));
-  if (missing.length) writeFile(file, `${existing}${existing && !existing.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`);
+  const { dir, store } = paths(cwd);
+  for (const folder of new Set([dir, store])) {
+    const file = path.join(folder, '.gitignore');
+    const existing = readText(file) || '';
+    const lines = existing.split('\n').map((l) => l.trim());
+    const missing = GITIGNORED.filter((e) => !lines.includes(e));
+    if (missing.length) writeFile(file, `${existing}${existing && !existing.endsWith('\n') ? '\n' : ''}${missing.join('\n')}\n`);
+  }
 }
 
 module.exports = {
@@ -592,6 +755,9 @@ module.exports = {
   unsavedSessions,
   recentQuestions,
   moveQuestion,
+  adoptLocalStore,
+  storyPlan,
+  startStory,
   updateHandoff,
   activateBranch,
   listSavedHandoffs: listSaved,

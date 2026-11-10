@@ -9,12 +9,12 @@
 // nothing in here may import 'vscode'.
 const fs = require('fs');
 const path = require('path');
-const { dataDir } = require('./config');
+const { storeDir } = require('./config');
 const { readText, readJson, writeFile, listFiles, mtime } = require('./util');
 const { parseSections, isSubstantive } = require('./summarize');
 
 const INDEX_VERSION = 1;
-const handoffsDir = (cwd) => path.join(dataDir(cwd), 'handoffs');
+const handoffsDir = (cwd) => path.join(storeDir(cwd), 'handoffs');
 const indexFile = (cwd) => path.join(handoffsDir(cwd), 'index.json');
 
 /**

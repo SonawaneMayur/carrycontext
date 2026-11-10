@@ -3,6 +3,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { readJson, writeFile } = require('./util');
+const { mainFolder } = require('./git');
 
 /**
  * @typedef {Object} Config
@@ -16,6 +17,8 @@ const { readJson, writeFile } = require('./util');
  * @property {{enabled: boolean, extraPatterns: string[]}} redact   secret redaction (see src/security/secrets.js)
  * @property {{enabled: boolean}} verify   check the session's claims against git and recorded results
  * @property {{showCost: boolean, prices: Record<string, Price>, machineWatts: number, electricityPrice: number}} usage   token stats (see src/core/usage.js)
+ * @property {{folder: string, keep: number}} backup   daily copies of the shared store ('' = ~/.carrycontext/backups; keep 0 = off)
+ * @property {{branchPattern: string}} stories   branch name for a new story: {id} and {title} are filled in
  *
  * $ per million tokens for one model. Cache writes default to 1.25x input (5-minute) and 2x (1-hour).
  * @typedef {{input: number, output: number, cacheRead: number, cacheWrite5m?: number, cacheWrite1h?: number}} Price
@@ -33,6 +36,8 @@ const DEFAULTS = {
   redact: { enabled: true, extraPatterns: [] },
   verify: { enabled: true },
   usage: { showCost: true, prices: {}, machineWatts: 15, electricityPrice: 0 },
+  backup: { folder: '', keep: 7 },
+  stories: { branchPattern: 'feature/{id}-{title}' },
 };
 
 /**
@@ -42,9 +47,14 @@ const DEFAULTS = {
  * never from a project's .carrycontext/config.json. Otherwise a cloned repo could redirect
  * summaries, and the API key sent with them, to its own server.
  */
-const USER_ONLY = ['summarizer', 'redact', 'maxTranscriptChars'];
+const USER_ONLY = ['summarizer', 'redact', 'maxTranscriptChars', 'backup']; // backup: a repo mustn't point your backups at a synced folder
 
 const dataDir = (cwd) => path.join(cwd, '.carrycontext');
+/**
+ * Where the data shared by every folder of a project lives: handoffs per branch, their versions and
+ * the usage ledger. A story folder (git worktree) shares its main folder's; otherwise it's dataDir.
+ */
+const storeDir = (cwd) => dataDir(mainFolder(cwd));
 const configPath = (cwd) => path.join(dataDir(cwd), 'config.json');
 
 /** Per-user config file, outside every project. */
@@ -86,6 +96,13 @@ function normalizeConfig(raw) {
       prices: prices(c.usage?.prices),
       machineWatts: clamp(c.usage?.machineWatts, 1, 5000, DEFAULTS.usage.machineWatts),
       electricityPrice: clamp(c.usage?.electricityPrice, 0, 100, DEFAULTS.usage.electricityPrice),
+    },
+    backup: {
+      folder: typeof c.backup?.folder === 'string' ? c.backup.folder.trim() : DEFAULTS.backup.folder,
+      keep: clamp(c.backup?.keep, 0, 365, DEFAULTS.backup.keep),
+    },
+    stories: {
+      branchPattern: typeof c.stories?.branchPattern === 'string' && c.stories.branchPattern.includes('{id}') ? c.stories.branchPattern : DEFAULTS.stories.branchPattern,
     },
   };
 }
@@ -140,4 +157,4 @@ function saveUserConfig(values) {
   }
 }
 
-module.exports = { DEFAULTS, USER_ONLY, loadConfig, saveConfig, normalizeConfig, ignoredProjectSettings, userConfigPath, dataDir };
+module.exports = { DEFAULTS, USER_ONLY, loadConfig, saveConfig, normalizeConfig, ignoredProjectSettings, userConfigPath, dataDir, storeDir };

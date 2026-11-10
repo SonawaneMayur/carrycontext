@@ -11,7 +11,7 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
-const { dataDir } = require('./config');
+const { storeDir } = require('./config');
 const { readJson, writeFile } = require('./util');
 const { sanitize } = require('./sanitize');
 const { isSubstantive } = require('./summarize');
@@ -182,7 +182,7 @@ function machineLabel() {
  * @param {import('./config').Config} config
  */
 async function usageSummary(cwd, config) {
-  const file = path.join(dataDir(cwd), 'usage.json');
+  const file = path.join(storeDir(cwd), 'usage.json'); // shared by every story folder of the project
   const prices = config.usage?.prices || {};
   let branches; // the reflog is read only if a session needs recounting
   const ctx = { cwd, redact: config.redact, branchAt: (ms) => (branches ||= branchAt(cwd))(ms) };
@@ -212,12 +212,15 @@ async function usageSummary(cwd, config) {
       sessions[key] = fresh && hit && hit.size === now.size && hit.mtime === now.mtime ? hit : { ...now, machine: machineLabel(), ...sessionUsage(adapter, ref, prices, ctx) };
     }
   }
-  // A session whose log is gone (Claude Code deletes logs after about 30 days) keeps the totals it
-  // was recorded with, so a feature's cost stays complete however long it takes.
-  for (const [key, s] of Object.entries(cached)) {
-    if (!sessions[key] && s.rows && config.sources.includes(s.provider)) sessions[key] = s;
+  // Sessions not counted here keep the totals they were recorded with: another story folder's,
+  // or one whose log is gone (Claude Code deletes logs after about 30 days), so a feature's cost
+  // stays complete. Re-read just before saving, so a window saving at the same time isn't overwritten.
+  const counted = new Set(Object.keys(sessions));
+  const latest = readJson(file, null)?.sessions || cached;
+  for (const [key, s] of Object.entries(latest)) {
+    if (!counted.has(key) && s.rows && config.sources.includes(s.provider)) sessions[key] = s;
   }
-  if (Object.keys(sessions).length && JSON.stringify(sessions) !== JSON.stringify(cached)) {
+  if (Object.keys(sessions).length && JSON.stringify(sessions) !== JSON.stringify(latest)) {
     ensureGitignore(cwd);
     writeFile(file, JSON.stringify({ version: VERSION, stamp, sessions }) + '\n');
   }

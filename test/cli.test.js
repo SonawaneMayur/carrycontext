@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const { sandbox, read } = require('./helpers/env');
@@ -40,4 +41,12 @@ test('show explains what to do when there is no handoff yet', () => {
 
 test('an unknown hook source exits with an error', () => {
   assert.throws(() => execFileSync(process.execPath, [CLI, 'hook', 'nope'], { stdio: 'pipe', env: process.env }), /Unknown hook source/);
+});
+
+test('start-story --dry-run shows the branch, base and folder, and changes nothing', { skip: !require('./helpers/env').hasGit && 'git missing' }, () => {
+  const cwd = env.project({ git: true });
+  const out = run('start-story', '--id', '24173551', '--title', 'Outlook export', '--dry-run', '--cwd', cwd);
+  assert.match(out, /^Story 24173551: Outlook export\n  branch: feature\/24173551-outlook-export \(new\)\n  from:   main, fetched from origin first\n  folder: \.\.\/[^\n]+-24173551$/m);
+  assert.ok(!fs.existsSync(path.join(path.dirname(cwd), `${path.basename(cwd)}-24173551`)), 'no folder made');
+  assert.throws(() => run('start-story', '--cwd', cwd, '--dry-run'), /needs --id/);
 });

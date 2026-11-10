@@ -37,6 +37,8 @@ To package it: `npx @vscode/vsce package`, then install the `.vsix` file.
 |---|---|
 | **Compact All** | Reads the newest session of each source provider (default: claude, codex, gemini) from the last 24h, merges them in time order, and writes the handoff everywhere |
 | **Create Handoff From a Specific Session…** | Pick one or more sessions by hand |
+| **Start Stories in Their Own Folders…** | A branch from the story's base, a folder next to the project (a git worktree) and a new window with a new chat, for each story (see [Working on several stories at once](#working-on-several-stories-at-once)) |
+| **Back Up Now** / **Restore From Backup…** | Copy this project's handoffs and usage to your backup folder, or put a backup back (see [Backups](#backups)) |
 | **Move a Question to Another Chat…** | Take a question, and the replies to it, out of the chat you asked it in: to a new chat, into another branch's handoff, or nowhere (see [Moving a question](#moving-a-question)) |
 | **Switch To Provider…** | Optionally refreshes the handoff, writes it where the chosen provider looks, then opens that tool with a "resume from handoff" prompt |
 | **Install Claude Code Hooks** | Refreshes the handoff on compact and session end, and loads it into new sessions |
@@ -103,6 +105,27 @@ Named copy examples:
 - **Index:** `.carrycontext/handoffs/index.json` caches each file's title, branch and date for the panel and search. It's checked against the files on every read and rebuilt if it's deleted.
 
 `carrycontext.targets` decides which of the provider copies are written. Instruction files only get a block between `<!-- carrycontext:start -->` and `<!-- carrycontext:end -->` markers; nothing else in them is changed.
+
+## Working on several stories at once
+
+A folder can have only one branch checked out, so two chats in one folder working on two branches would edit the same files. For stories in parallel, each story gets **its own folder**, a git worktree next to your project, on its own branch, in its own VS Code window with its own chats.
+
+**Start them** with **Start Stories in Their Own Folders…**, or just say so in a Claude Code chat ("starting the sprint: 24173551 Outlook export, 24180000 invoice PDF off release/2026.11"). The **start-story** skill, installed with the Claude Code hooks, shows you each story's branch, base and folder and **asks before creating anything**. Then, for each story:
+
+- **A branch** named by `carrycontext.stories.branchPattern` (default `feature/{id}-{title}`), from its base: your repo's default branch unless you name another. The base is fetched from origin first, so the story starts from the latest. The new branch doesn't track its base, so a plain `git push` never pushes into `develop`. An existing branch is checked out as it is.
+- **A folder** next to your project, `myapp-24173551`, made with `git worktree add`. An existing folder is left alone.
+- **A handoff** saying which story it is, with its base branch's context as background: not your current work's.
+- **A new window** with a new Claude Code chat, which starts from that handoff.
+
+Nothing in the folder you're in is switched, stashed, committed or deleted.
+
+**One CarryContext for the project.** Every story folder shares the main folder's handoffs per branch, their versions and the usage ledger. The main window's panel shows every story, the Usage report covers all of them, and **deleting a story folder loses nothing**: when a story is done, `git worktree remove ../myapp-24173551` is safe for CarryContext's data. Each folder keeps its own active handoff for its assistants. Story folders made with 0.8 move their data into the shared store once, backed up first.
+
+## Backups
+
+Once a day, the first time CarryContext runs, it copies the project's handoffs per branch, their versions and the usage ledger to `~/.carrycontext/backups/<project>-<id>/<date>/`, a folder only you can read, and keeps the newest 7. **Back Up Now** makes one any time. **Restore From Backup…** puts one back after backing up what's there now, so a restore can be undone. Claude Code's own chat logs aren't copied; the handoffs and the ledger keep what CarryContext needs.
+
+Set `carrycontext.backup.folder` to choose another folder (CarryContext warns if it syncs to iCloud, Dropbox, OneDrive or Google Drive, which would upload conversation summaries) and `carrycontext.backup.keep` for how many to keep (0 turns them off). Both are user settings, so a cloned repo can't redirect your backups.
 
 ## Moving a question
 

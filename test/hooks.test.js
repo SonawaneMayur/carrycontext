@@ -103,3 +103,17 @@ test('hook script: session-start loads the checked-out branch, even without Node
   });
   assert.match(out, /^# Handoff: .* \(main\)$/m);
 });
+
+test('the hooks also install the start-story skill (kept out of git) and a way for it to run CarryContext', { skip: !hasGit && 'git missing' }, () => {
+  const cwd = env.project({ git: true });
+  hooks.installClaudeHooks(cwd, CLI, process.execPath);
+  const skill = path.join(cwd, '.claude', 'skills', 'start-story', 'SKILL.md');
+  assert.match(read(skill), /^---\nname: start-story\ndescription: Start one or more stories/);
+  assert.match(read(skill), /cli start-story --id <ID> --title "<short title>" \[--base <branch>\] --dry-run/);
+  assert.match(read(skill), /Don't continue without a clear yes/);
+  assert.doesNotMatch(git(cwd, 'status', '--porcelain', '--untracked-files=all'), /SKILL\.md/, 'not offered to git');
+  assert.match(read(path.join(cwd, '.carrycontext', 'hooks', 'claude-hook.sh')), /\n  cli\)\n.*\n    shift\n    run_cli "\$@"/);
+  fs.writeFileSync(skill, 'my own version');
+  hooks.installClaudeHooks(cwd, CLI, process.execPath);
+  assert.equal(read(skill), 'my own version', 'your edits are kept once the marker line is gone');
+});

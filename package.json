@@ -87,6 +87,21 @@
         "category": "CarryContext"
       },
       {
+        "command": "carrycontext.startStories",
+        "title": "Start Stories in Their Own Folders…",
+        "category": "CarryContext"
+      },
+      {
+        "command": "carrycontext.backupNow",
+        "title": "Back Up Now",
+        "category": "CarryContext"
+      },
+      {
+        "command": "carrycontext.restoreBackup",
+        "title": "Restore From Backup…",
+        "category": "CarryContext"
+      },
+      {
         "command": "carrycontext.switchProvider",
         "title": "Switch To Provider…",
         "category": "CarryContext",
@@ -279,6 +294,24 @@
           "type": "boolean",
           "default": true,
           "description": "Show estimated cost in usage stats, at Anthropic API list prices. On a Claude subscription you don't pay per token, so the figure is what the same work would cost through the API. Token counts are always shown."
+        },
+        "carrycontext.backup.folder": {
+          "type": "string",
+          "default": "",
+          "scope": "machine",
+          "description": "Where daily backups of CarryContext's data go (handoffs per branch, their versions, the usage ledger). Empty means ~/.carrycontext/backups. Avoid a folder synced to iCloud, Dropbox, OneDrive or Google Drive: handoffs hold conversation summaries."
+        },
+        "carrycontext.backup.keep": {
+          "type": "number",
+          "default": 7,
+          "minimum": 0,
+          "scope": "machine",
+          "description": "How many daily backups to keep. 0 turns backups off."
+        },
+        "carrycontext.stories.branchPattern": {
+          "type": "string",
+          "default": "feature/{id}-{title}",
+          "description": "Branch name for a story started with Start Stories in Their Own Folders: {id} is the story ID and {title} a short title in lowercase with dashes. Must contain {id}."
         },
         "carrycontext.usage.machineWatts": {
           "type": "number",

@@ -4,7 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('fs');
 const path = require('path');
-const { sandbox } = require('./helpers/env');
+const { sandbox, hasGit, git } = require('./helpers/env');
 const { FAKE_SECRETS } = require('./helpers/fakeSecrets');
 
 const env = sandbox();
@@ -185,6 +185,20 @@ test("a chat whose log is gone keeps the totals it was recorded with, even after
   const s = await usageSummary(cwd, config({ usage: { prices: JSON.parse('{"claude-opus-5-5": {"input": 1, "output": 1}}') } }));
   assert.equal(s.total.replies, 1);
   near(s.total.cost, 0.02); // 1,000 output tokens at the list price when it was recorded
+});
+
+test('one ledger for all story folders: each counts its own chats, every report shows all, even after a folder is gone', { skip: !hasGit && 'git missing' }, async () => {
+  const main = env.project({ git: true });
+  const story = path.join(path.dirname(main), `${path.basename(main)}-24173551`);
+  git(main, 'worktree', 'add', '-q', '-b', 'feature/24173551', story);
+  writeLog(projectLogs(main), 'm', [ask('Tidy the README', '2026-11-05T09:00:00Z'), reply(usage(100), '2026-11-05T09:00:10Z')]);
+  writeLog(projectLogs(story), 's', [ask('Add the Outlook export', '2026-11-05T10:00:00Z', 'feature/24173551'), reply(usage(200), '2026-11-05T10:00:10Z', { branch: 'feature/24173551' })]);
+  await usageSummary(main, config());
+  const s = await usageSummary(story, config());
+  assert.deepEqual(s.features.map((f) => f.name).sort(), ['24173551', 'main']);
+  assert.ok(!fs.existsSync(path.join(story, '.carrycontext', 'usage.json')), 'no ledger of its own');
+  git(main, 'worktree', 'remove', '--force', story);
+  assert.deepEqual((await usageSummary(main, config())).features.map((f) => f.name).sort(), ['24173551', 'main']);
 });
 
 test('cost at list prices: cache reads and writes, fast mode, long Haiku prompts, unknown models, your own prices', () => {

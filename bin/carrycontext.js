@@ -6,12 +6,12 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const { loadConfig, ignoredProjectSettings, userConfigPath } = require('../src/core/config');
-const { paths, gatherSessions, updateHandoff, activateBranch, syncTargets, resumePrompt } = require('../src/core/handoff');
+const { paths, gatherSessions, updateHandoff, activateBranch, syncTargets, resumePrompt, adoptLocalStore, storyPlan, startStory } = require('../src/core/handoff');
 const { processPayload } = require('../src/core/claudeHooks');
 const { readText } = require('../src/core/util');
 const { getLlm, listLlms } = require('../src/llm');
 const { gitAvailable } = require('../src/core/git');
-const { hooksInstalled } = require('../src/core/claudeHooks');
+const { hooksInstalled, installClaudeHooks } = require('../src/core/claudeHooks');
 const { usageSummary, renderReport, renderCsv } = require('../src/core/usage');
 
 function parseArgs(argv) {
@@ -41,6 +41,8 @@ async function main() {
     console.error(`carrycontext: ignored ${ignored.join(', ')} in .carrycontext/config.json; these can only be set in your user config (${userConfigPath()})`);
   }
   const [cmd, sub] = args._;
+  // A story folder made with CarryContext 0.8 kept its own data; it moves into the shared store once.
+  adoptLocalStore(cwd, config);
 
   switch (cmd) {
     case 'compact-all': {
@@ -109,6 +111,24 @@ async function main() {
       process.stdout.write(args.csv ? renderCsv(summary) : renderReport(summary, path.basename(cwd)));
       break;
     }
+    case 'start-story': {
+      // A story in its own folder (git worktree) and branch. --dry-run only shows what would happen.
+      if (!args.id && !args.branch) throw new Error('start-story needs --id (and usually --title), or --branch');
+      const plan = storyPlan(cwd, config, { id: String(args.id || ''), title: String(args.title || ''), base: args.base ? String(args.base) : '', branch: args.branch ? String(args.branch) : '' });
+      const where = path.relative(cwd, plan.folder);
+      if (args['dry-run']) {
+        console.log(`Story ${plan.id || plan.branch}${plan.title ? `: ${plan.title}` : ''}
+  branch: ${plan.branch}${plan.exists ? ' (exists: checked out as it is)' : ' (new)'}
+  from:   ${plan.exists ? '(existing branch)' : `${plan.base}${args['no-fetch'] ? '' : ', fetched from origin first'}`}
+  folder: ${where}${fs.existsSync(plan.folder) ? ' (already exists: would be left alone)' : ''}`);
+        break;
+      }
+      const res = startStory(cwd, config, plan, { fetch: !args['no-fetch'] });
+      // The new folder gets the Claude Code hooks too, when this one has them.
+      if (hooksInstalled(cwd)) installClaudeHooks(plan.folder, __filename, process.execPath);
+      console.log(`Started ${res.branch} in ${where}, from ${res.exists ? 'the existing branch' : res.from}. VS Code opens it in a new window with a new chat.${res.note ? `\n${res.note}` : ''}`);
+      break;
+    }
     default:
       console.log(`usage: carrycontext <command> [--cwd DIR]
 
@@ -119,6 +139,8 @@ async function main() {
   show                 print the current handoff
   usage [--csv]        tokens, models, active time and estimated cost by branch, session and question
   prompt <provider>    print a prompt that tells <provider> to resume from the handoff
+  start-story --id ID --title T [--base B] [--branch NAME] [--no-fetch] [--dry-run]
+                       start a story on its own branch, in its own folder (git worktree)
   hook claude          used by Claude Code hooks (reads --payload FILE)`);
   }
 }
