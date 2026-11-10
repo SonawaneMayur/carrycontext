@@ -4,6 +4,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-10
+
 ### Added
 
 - **Parallel stories, each in its own folder.** **Start Stories in Their Own Folders…**, or saying so in a Claude Code chat (the new **start-story** skill shows the plan and asks first), gives each story a branch from its base (fetched first), a folder next to the project (a git worktree), a handoff saying which story it is, and a new window with a new Claude chat. Nothing in the folder you're in changes, and a branch made from origin doesn't track it, so it never pushes into its base.
@@ -212,7 +214,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.2...v0.7.3
 [0.7.2]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.1...v0.7.2
