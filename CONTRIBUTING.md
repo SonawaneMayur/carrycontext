@@ -66,7 +66,7 @@ Rules that keep the project safe:
 - Keep each pull request to one change, with tests.
 - Commit messages: a short imperative summary ("Add Aider session reader"), then a blank line and the why if it isn't obvious.
 - Update `CHANGELOG.md` under **Unreleased** for anything users will notice.
-- CI must pass: tests on Ubuntu and macOS with Node 22 and 24, the `.vsix` build, and CodeQL.
+- CI must pass: tests on Ubuntu and macOS with Node 22, 24 and 26, the `.vsix` build, and CodeQL.
 
 ## Releasing (maintainers)
 
