@@ -111,16 +111,27 @@ function heuristicSections(messages, prev, cwd) {
   facts.edited = facts.edited.filter(inProject(cwd));
   facts.read = facts.read.filter(inProject(cwd));
   const users = messages.filter((m) => m.role === 'user' && m.text.trim());
-  const lastAssistant = [...messages].reverse().find((m) => m.role === 'assistant' && m.text.trim());
   const openTodos = (facts.todos || []).filter((t) => t.status !== 'completed');
   const inProgress = openTodos.find((t) => t.status === 'in_progress');
+  // The assistant's own compaction summary is model-written, so it beats a transcript scan for
+  // the goal, state, tasks and next step. Only what came after it is newer.
+  const compaction = compactionSummary(messages);
+  const summary = compaction?.sections || {};
+  const recent = compaction ? compaction.after : messages;
+  const lastAssistant = [...recent].reverse().find((m) => m.role === 'assistant' && m.text.trim());
+  const newerRequests = compaction ? compaction.after.some((m) => m.role === 'user' && isSubstantive(m.text)) : false;
+  const atCompaction = summary['Current state']
+    ? `At the last compaction (${compaction?.provider || 'assistant'}${compaction?.ts ? ', ' + compaction.ts : ''}), the work was:\n\n${quote(summary['Current state'])}`
+    : '';
+  const lastUpdate = lastAssistant
+    ? `Last assistant update (${lastAssistant.provider}${lastAssistant.ts ? ', ' + lastAssistant.ts : ''}):\n\n${quote(truncate(lastAssistant.text.trim(), compaction ? 1500 : 2500))}`
+    : '';
 
   return {
     'Short description': shortText(latestRequest(users), 8),
-    Goal: prev.Goal || truncate(users[0]?.text.trim() || '_Unknown_', 1500),
-    'Current state': lastAssistant
-      ? `Last assistant update (${lastAssistant.provider}${lastAssistant.ts ? ', ' + lastAssistant.ts : ''}):\n\n${quote(truncate(lastAssistant.text.trim(), 2500))}`
-      : prev['Current state'] || '_No assistant output yet._',
+    Goal: summary.Goal || prev.Goal || truncate(users[0]?.text.trim() || '_Unknown_', 1500),
+    // Newest first, so the panel's "stopped at" shows the latest work.
+    'Current state': [lastUpdate, atCompaction].filter(Boolean).join('\n\n') || prev['Current state'] || '_No assistant output yet._',
     'Recent requests': bullets(users.slice(-6), (m) => truncate(m.text.trim().replace(/\s+/g, ' '), 400)),
     // Only new candidates; handoff.js merges them into the existing log.
     'Key decisions': bullets(constraintStatements(users)),
@@ -133,13 +144,82 @@ function heuristicSections(messages, prev, cwd) {
     'Commands run': bullets(facts.commands.slice(-12), (c) => '`' + truncate(c.replace(/\n/g, ' '), 200) + '`'),
     'Open tasks': openTodos.length
       ? openTodos.map((t) => `- [ ] ${t.content}${t.status === 'in_progress' ? ' _(in progress)_' : ''}`).join('\n')
-      : prev['Open tasks'] || '',
+      : summary['Open tasks'] || prev['Open tasks'] || '',
     'Next steps':
       (inProgress && `- Finish: ${inProgress.content}`) ||
+      (summary['Next steps'] &&
+        `${summary['Next steps']}${newerRequests ? '\n\n_From the last compaction. The recent requests above are newer and may replace it._' : ''}`) ||
       prev['Next steps'] ||
       '- Continue from the most recent request above.',
-    Gotchas: prev.Gotchas || '',
+    Gotchas: summary.Gotchas || prev.Gotchas || '',
   };
+}
+
+const COMPACTION_MARK = '[Earlier compaction summary]';
+
+// Claude Code's compaction summary has numbered sections ("1. Primary Request and Intent:").
+// These map onto handoff sections. "All user messages" (verbatim) and "Files and Code
+// Sections" (code snippets) are left out on purpose: they are long, and the file list comes
+// from the transcript scan.
+const COMPACTION_SECTIONS = {
+  'primary request and intent': 'Goal',
+  'current work': 'Current state',
+  'pending tasks': 'Open tasks',
+  'optional next step': 'Next steps',
+  'errors and fixes': 'Gotchas',
+};
+const COMPACTION_LIMITS = { Goal: 1200, 'Current state': 1500, 'Open tasks': 1000, 'Next steps': 800, Gotchas: 1000 };
+// Instructions to the model that follow the summary, not part of it.
+const COMPACTION_TRAILER = /^(?:If you need specific details from before compaction|Continue the conversation from where it left off|The messages after this summary)/m;
+
+/**
+ * The newest compaction summary the assistant wrote in this session, as handoff sections,
+ * with the messages that came after it. null when the session was never compacted.
+ * @param {import('../providers/types').Message[]} messages
+ * @returns {{sections: Record<string, string>, ts?: string, provider?: string, after: import('../providers/types').Message[]} | null}
+ */
+function compactionSummary(messages) {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (m.role !== 'system' || !m.text.startsWith(COMPACTION_MARK)) continue;
+    const sections = parseCompaction(m.text);
+    return Object.keys(sections).length ? { sections, ts: m.ts, provider: m.provider, after: messages.slice(i + 1) } : null;
+  }
+  return null;
+}
+
+/** Split a compaction summary on its top-level numbered headings and keep the mapped ones. */
+function parseCompaction(text) {
+  let body = text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '');
+  const end = body.search(COMPACTION_TRAILER);
+  if (end >= 0) body = body.slice(0, end);
+  /** @type {Record<string, string[]>} */
+  const raw = {};
+  let current = null;
+  for (const line of body.split('\n')) {
+    // Top-level headings only: numbered lists inside a section are indented.
+    const h = line.match(/^\d+\.\s+(.+?):\s*$/);
+    if (h) {
+      current = COMPACTION_SECTIONS[h[1].replace(/\s*\(.*\)$/, '').trim().toLowerCase()] || null;
+      if (current) raw[current] = [];
+    } else if (current) {
+      raw[current].push(line);
+    }
+  }
+  /** @type {Record<string, string>} */
+  const out = {};
+  for (const [key, lines] of Object.entries(raw)) {
+    const text = dedent(lines).trim();
+    if (text) out[key] = truncate(text, COMPACTION_LIMITS[key]);
+  }
+  return out;
+}
+
+/** Remove the indentation every non-blank line shares. */
+function dedent(lines) {
+  const indents = lines.filter((l) => l.trim()).map((l) => l.match(/^ */)[0].length);
+  const cut = indents.length ? Math.min(...indents) : 0;
+  return lines.map((l) => l.slice(cut)).join('\n');
 }
 
 // Sentences in user messages that state a rule or a choice: an instruction ("Don't publish my
@@ -310,6 +390,7 @@ module.exports = {
   condense,
   parseSections,
   heuristicSections,
+  compactionSummary,
   llmSections,
   shortText,
   isSubstantive,

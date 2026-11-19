@@ -135,3 +135,99 @@ test('mergeDecisions appends new entries, tags them and skips duplicates and pla
 test('shortText strips markdown and limits words', () => {
   assert.equal(s.shortText('**Add** `named` files for every single session today\nsecond line', 4), 'Add named files for');
 });
+
+// A compaction summary in Claude Code's format, as the Claude reader passes it on.
+const compacted = (ts = '2026-11-10T19:01:55.537Z') => ({
+  role: 'system',
+  provider: 'claude',
+  ts,
+  text: `[Earlier compaction summary]
+This session is being continued from a previous conversation that ran out of context. The summary below covers the earlier portion of the conversation.
+
+<system-reminder>
+<tools-used-before-summary>Bash, Edit</tools-used-before-summary>
+</system-reminder>
+Summary:
+1. Primary Request and Intent:
+   Build an export feature for the reports page, CSV first.
+
+2. Key Technical Concepts:
+   - Streams
+
+3. Files and Code Sections (repo \`/p/app\`):
+   - src/export.js
+     \`\`\`js
+     secretCode()
+     \`\`\`
+
+4. Errors and fixes:
+   - The CSV header was missing. Fixed by writing it before the first row.
+
+5. Problem Solving:
+   Chose streaming to keep memory flat.
+
+6. All user messages:
+   - "my private aside"
+
+7. Pending Tasks:
+   1. Add an Excel export.
+   2. Update the README.
+
+8. Current Work:
+   CSV export works and its tests pass.
+
+9. Optional Next Step:
+   Start the Excel export.
+
+If you need specific details from before compaction (like exact code snippets), read the full transcript at: /x.jsonl
+Continue the conversation from where it left off without asking the user any further questions.`,
+});
+
+test('compactionSummary maps the assistant\'s summary onto handoff sections and leaves the rest out', () => {
+  const c = s.compactionSummary([user('Build the export'), compacted(), assistant('Looking at Excel libraries')]);
+  assert.equal(c.ts, '2026-11-10T19:01:55.537Z');
+  assert.equal(c.after.length, 1);
+  assert.deepEqual(c.sections, {
+    Goal: 'Build an export feature for the reports page, CSV first.',
+    Gotchas: '- The CSV header was missing. Fixed by writing it before the first row.',
+    'Open tasks': '1. Add an Excel export.\n2. Update the README.', // nested lists are kept, not taken as headings
+    'Current state': 'CSV export works and its tests pass.',
+    'Next steps': 'Start the Excel export.',
+  });
+  const all = Object.values(c.sections).join('\n');
+  assert.doesNotMatch(all, /private aside|secretCode|tools-used|full transcript|Continue the conversation/);
+  assert.equal(s.compactionSummary([user('a'), assistant('b')]), null, 'never compacted');
+});
+
+test('compactionSummary uses the newest summary when a session was compacted more than once', () => {
+  const older = compacted('2026-10-27T20:36:04.250Z');
+  older.text = older.text.replace('CSV export works', 'Nothing works yet');
+  const c = s.compactionSummary([older, user('more'), compacted()]);
+  assert.equal(c.sections['Current state'], 'CSV export works and its tests pass.');
+});
+
+test('heuristicSections prefers the compaction summary over the first prompt and keeps newer work first', () => {
+  const sec = s.heuristicSections(
+    [user('build export pls'), assistant('Started'), compacted(), user('Now add the Excel export'), assistant('Excel export is half done')],
+    { Goal: 'build export pls', Gotchas: 'Old gotcha' },
+  );
+  assert.equal(sec.Goal, 'Build an export feature for the reports page, CSV first.');
+  assert.match(sec['Current state'], /^Last assistant update \(claude[^]*Excel export is half done[^]*At the last compaction \(claude, 2026-11-10T19:01:55\.537Z\)[^]*CSV export works/);
+  assert.match(sec['Open tasks'], /Add an Excel export/);
+  assert.match(sec['Next steps'], /^Start the Excel export\.\n\n_From the last compaction\. The recent requests above are newer/);
+  assert.equal(sec.Gotchas, '- The CSV header was missing. Fixed by writing it before the first row.');
+});
+
+test('heuristicSections uses the compaction state alone when nothing came after it', () => {
+  const sec = s.heuristicSections([user('build export'), assistant('Before the compaction'), compacted(), user('ok')], {});
+  assert.match(sec['Current state'], /^At the last compaction/);
+  assert.doesNotMatch(sec['Current state'], /Before the compaction/, 'replies before the summary are older than it');
+  assert.equal(sec['Next steps'], 'Start the Excel export.', '"ok" is not a newer request');
+});
+
+test('a newer todo list beats the compaction summary for tasks and next step', () => {
+  const todos = { name: 'TodoWrite', input: { todos: [{ content: 'Write Excel tests', status: 'in_progress' }] } };
+  const sec = s.heuristicSections([compacted(), assistant('', [todos])], {});
+  assert.equal(sec['Open tasks'], '- [ ] Write Excel tests _(in progress)_');
+  assert.equal(sec['Next steps'], '- Finish: Write Excel tests');
+});

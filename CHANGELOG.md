@@ -4,6 +4,10 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Changed
+
+- **The free summary uses Claude's own compaction summary.** When Claude Code has compacted a chat, the default (no-LLM) handoff takes the goal, current state, pending tasks, next step and errors-and-fixes from Claude's newest summary, instead of your first prompt and the last reply. Work after the compaction still comes first, and a next step older than your latest request says so. Claude's verbatim list of your messages and its code snippets are left out. The header shows `heuristic + claude compaction summary (time)`. Chats that were never compacted are unchanged.
+
 ## [0.9.0] - 2026-11-10
 
 ### Added

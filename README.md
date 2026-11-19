@@ -224,7 +224,7 @@ While VS Code is open, the extension checks every 30s for conversations in this 
 
 | `carrycontext.summarizer.provider` | Notes |
 |---|---|
-| `none` (default) | Free and offline. Pulls the goal, latest state, recent requests, files touched, commands run, and todos from the transcript. Keeps the decisions and gotchas from an earlier LLM-written handoff instead of discarding them |
+| `none` (default) | Free and offline. Pulls the goal, latest state, recent requests, files touched, commands run, and todos from the transcript. When Claude Code has compacted the chat, the goal, state, pending tasks, next step and gotchas come from Claude's own summary instead, at no extra cost. Keeps the decisions and gotchas from an earlier LLM-written handoff instead of discarding them |
 | `anthropic`, `openai`, `gemini` | API keys entered with **Set API Key** go into VS Code secret storage. Hooks run outside VS Code, so they read `ANTHROPIC_API_KEY`, `OPENAI_API_KEY` or `GEMINI_API_KEY` from your environment |
 
 The summarizer is chosen in your **user** settings (Select Summarizer saves it there); workspace settings for it are ignored on purpose, see [SECURITY.md](SECURITY.md). Without VS Code, set it in `~/Library/Application Support/carrycontext/config.json` (macOS) or `~/.config/carrycontext/config.json` (Linux), for example `{"summarizer": {"provider": "ollama", "model": "llama3.1"}}`.

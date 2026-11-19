@@ -425,3 +425,31 @@ test('resumePrompt points each provider at its own copy', () => {
   assert.match(h.resumePrompt(cwd, 'codex'), /^Read \.codex\/handoff\.md\./);
   assert.match(h.resumePrompt(cwd, 'cursor'), /\.cursor\/rules\/handoff\.mdc/);
 });
+
+test('a compacted Claude chat: the free handoff uses Claude\'s summary and says so in the header', async () => {
+  const cwd = env.project();
+  const file = writeClaude(cwd, 'compacted', [
+    { role: 'user', text: 'make export thing' },
+    { role: 'assistant', text: 'Started on it' },
+  ]);
+  const summary = [
+    'This session is being continued from a previous conversation that ran out of context.',
+    '',
+    'Summary:',
+    '1. Primary Request and Intent:',
+    '   Ship a CSV export for the reports page.',
+    '',
+    '8. Current Work:',
+    '   The CSV export is done and tested.',
+    '',
+    '9. Optional Next Step:',
+    '   Start the Excel export.',
+  ].join('\n');
+  const entry = { type: 'user', isCompactSummary: true, sessionId: 'compacted', cwd, timestamp: '2026-11-10T19:01:55.000Z', message: { role: 'user', content: summary } };
+  fs.appendFileSync(file, JSON.stringify(entry) + '\n');
+  const { doc } = await h.updateHandoff({ cwd, sessions: [claudeSession(file)], trigger: 't', config: config(), getApiKey: noKey });
+  assert.match(doc, /- \*\*Summarizer:\*\* heuristic \+ claude compaction summary \(2026-11-10 19:01 UTC\)/);
+  assert.match(doc, /## Goal\n\nShip a CSV export for the reports page\./);
+  assert.match(doc, /## Current state\n\nAt the last compaction[^]*The CSV export is done and tested\./);
+  assert.match(doc, /## Next steps\n\nStart the Excel export\./);
+});

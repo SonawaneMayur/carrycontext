@@ -11,7 +11,7 @@ const { dataDir, storeDir } = require('./config');
 const { writeFile, readText, readJson, mtime, upsertManagedBlock, rel } = require('./util');
 const { sanitize } = require('./sanitize');
 const { listSaved, catalog, pruneHistory } = require('./catalog');
-const { SECTIONS, parseSections, heuristicSections, llmSections, shortText, mergeDecisions } = require('./summarize');
+const { SECTIONS, parseSections, heuristicSections, compactionSummary, llmSections, shortText, mergeDecisions } = require('./summarize');
 const { verifyClaims, countClaims, renderClaims, summaryLine } = require('./claims');
 const {
   currentBranch,
@@ -317,7 +317,14 @@ async function writeBranchHandoff({ cwd, branch, current, messages, sessions, so
       warning = `Summarizer failed, used heuristic instead: ${e.message}`;
     }
   }
-  sections ||= heuristicSections(messages, prev, cwd);
+  if (!sections) {
+    sections = heuristicSections(messages, prev, cwd);
+    const compaction = compactionSummary(messages);
+    if (compaction) {
+      const when = compaction.ts ? ` (${compaction.ts.slice(0, 16).replace('T', ' ')} UTC)` : '';
+      summarizer = `heuristic + ${compaction.provider || 'assistant'} compaction summary${when}`;
+    }
+  }
   sections['Repository state'] = repo || prev['Repository state'] || '';
   sections.Verification = verification || (isCurrent ? '' : prev.Verification || '');
   // Contradicted claims become the first next steps, so the next assistant fixes them instead
@@ -619,10 +626,10 @@ function otherSessions(cwd, branch, sources, config) {
     .join('\n');
 }
 
-/** The first line of a Current state section, without the heuristic's "Last assistant update" lead-in. */
+/** The first line of a Current state section, without the heuristic's "Last assistant update" or "At the last compaction" lead-in. */
 function stoppedAt(state = '') {
   const lines = state.split('\n').map((l) => l.replace(/^>\s?/, '').replace(/\*\*/g, '').trim());
-  return clip(lines.find((l) => l && !/^Last assistant update\b/.test(l)) || '', 120);
+  return clip(lines.find((l) => l && !/^(?:Last assistant update|At the last compaction)\b/.test(l)) || '', 120);
 }
 
 const clip = (text, max) => (text.length > max ? `${text.slice(0, max).trimEnd()}…` : text);
