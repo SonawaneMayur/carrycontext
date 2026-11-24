@@ -4,6 +4,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-24
+
 ### Added
 
 - **Search box** at the top of the panel. It searches every Claude Code, Codex and Gemini chat in this folder as you type, chats with no handoff included, and every `.md`, `.json` and `.log` file in every folder of `.carrycontext` (earlier versions and copies of a handoff join their session), and tolerates typos (one per word up to seven letters, two from eight). Every-word matches come first, then partial ones; a match in the title ranks higher. Clicking a result opens its handoff, or creates one from the chat, and selects it in the Handoffs list below. As you type, every match is highlighted in that list (matched words lit up, with a search icon), down to the earlier versions that match, and its branch and groups are opened up. **Ask AI** sends your question and short, redacted excerpts of the best 20 matches (6 for Apple on-device) to the selected summarizer and links the sessions it names. Hidden when the summarizer is None. The box is a locked-down webview: no network, no remote content, results shown as plain text.
@@ -222,7 +224,8 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 - First release: Compact All, Claude Code hooks (PreCompact, SessionEnd, SessionStart), `/compact-all` command, named handoffs, sidebar panel, status bar menu, Switch To Provider for Claude Code, Codex, Gemini CLI, Copilot and Cursor, optional LLM summarizers (Anthropic, OpenAI, Gemini, Ollama, OpenAI-compatible).
 
-[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/SonawaneMayur/carrycontext/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.9.0...v0.10.0
 [0.9.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.3...v0.8.0
 [0.7.3]: https://github.com/SonawaneMayur/carrycontext/compare/v0.7.2...v0.7.3
