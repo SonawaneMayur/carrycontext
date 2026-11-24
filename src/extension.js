@@ -14,6 +14,7 @@ const { getProvider, listProviders } = require('./providers');
 const { getLlm, listLlms } = require('./llm');
 const { ago, readText, readJson, listFiles, mtime, tildify, shellQuote: posixQuote } = require('./core/util');
 const { HandoffTree } = require('./sidebar');
+const { SearchView } = require('./searchView');
 
 const POLL_MS = 30000;
 
@@ -81,6 +82,37 @@ function activate(context) {
   const tree = new HandoffTree(cwd, config, currentOnly);
   const view = vscode.window.createTreeView('carrycontext.handoffs', { treeDataProvider: tree });
   context.subscriptions.push(view);
+  // The search box above the list. Opening a chat without a handoff creates one from it.
+  const searchView = new SearchView({
+    cwd,
+    config,
+    getApiKey,
+    openFile: (file) => vscode.window.showTextDocument(vscode.Uri.file(file), { preview: true }),
+    createHandoff: (chat) => {
+      const adapter = getProvider(chat.provider);
+      return adapter ? run('Create handoff', () => compact([{ adapter, ref: chat.ref }], 'vscode:search')) : undefined;
+    },
+    // Select the result in the Handoffs list too, expanding its branch, without taking the focus.
+    reveal: async (file) => {
+      try {
+        const row = await tree.findHandoff(file);
+        if (row) await view.reveal(row, { select: true, focus: false, expand: false });
+      } catch (e) {
+        output.appendLine(`[warn] could not select ${file} in Handoffs: ${e.message}`);
+      }
+    },
+    // Highlight every match in the Handoffs list and open up its branch, group and session.
+    highlight: async (found) => {
+      try {
+        tree.setMatches(found);
+        for (const row of await tree.matchingRows()) await view.reveal(row, { select: false, focus: false, expand: false });
+      } catch (e) {
+        output.appendLine(`[warn] could not highlight search matches in Handoffs: ${e.message}`);
+      }
+    },
+    log: (line) => output.appendLine(line),
+  });
+  context.subscriptions.push(vscode.window.registerWebviewViewProvider('carrycontext.search', searchView));
   // The panel's filter button: the context key picks which of its two icons is shown.
   const showCurrentOnly = async (on) => {
     await context.workspaceState.update('currentBranchOnly', on);
@@ -127,6 +159,7 @@ function activate(context) {
 
   function refreshStatus() {
     tree.refresh();
+    searchView.invalidate();
     const dir = cwd();
     if (!dir) {
       status.text = '$(history) Handoff: no folder';
@@ -587,6 +620,7 @@ function activate(context) {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (!e.affectsConfiguration('carrycontext')) return;
       persistConfig();
+      searchView.invalidate(); // the summarizer (Ask AI) or the sources may have changed
       if (e.affectsConfiguration('carrycontext.targets') && cwd()) syncTargets(cwd(), config());
     }),
   );

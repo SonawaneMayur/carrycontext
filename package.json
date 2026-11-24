@@ -355,6 +355,11 @@
     "views": {
       "carrycontext": [
         {
+          "type": "webview",
+          "id": "carrycontext.search",
+          "name": "Search"
+        },
+        {
           "id": "carrycontext.handoffs",
           "name": "Handoffs"
         }

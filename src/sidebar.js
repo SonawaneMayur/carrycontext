@@ -20,8 +20,12 @@ const { Collapsed, Expanded, None } = vscode.TreeItemCollapsibleState;
  * A row, plus what its children are made from.
  * @typedef {import('./core/catalog').Branch} Branch
  * @typedef {import('./core/catalog').Session} Session
- * @typedef {vscode.TreeItem & {kind?: string, branch?: Branch, session?: Session, branches?: Branch[]}} Row
+ * @typedef {vscode.TreeItem & {kind?: string, branch?: Branch, session?: Session, branches?: Branch[], file?: string, chatKey?: string}} Row
+ * @typedef {{keys: Set<string>, files: Set<string>, words: string[]}} Matches  what the search box found
  */
+
+/** At most this many matching rows are opened up per search, so the list stays usable. */
+const MAX_REVEALED = 20;
 
 class HandoffTree {
   /**
@@ -35,6 +39,49 @@ class HandoffTree {
     this.currentOnly = currentOnly;
     this._onDidChange = new vscode.EventEmitter();
     this.onDidChangeTreeData = this._onDidChange.event;
+    /** @type {WeakMap<Row, Row>} each row's parent, so VS Code can expand down to it (reveal) */
+    this.parents = new WeakMap();
+    /** @type {Matches | null} */
+    this.matches = null;
+  }
+
+  /**
+   * Highlight what the search box found: sessions by key ("claude:1a2b3c4d"), files by path.
+   * Null clears it.
+   * @param {{keys: string[], files: string[], words: string[]} | null} found
+   */
+  setMatches(found) {
+    this.matches = found && (found.keys.length || found.files.length) ? { keys: new Set(found.keys), files: new Set(found.files), words: found.words } : null;
+    this.refresh();
+  }
+
+  /** @param {Row} row */
+  isMatch(row) {
+    const m = this.matches;
+    if (!m) return false;
+    if (row.kind === 'session' && row.session) return m.keys.has(row.session.key) || m.files.has(row.session.file);
+    if (row.chatKey) return m.keys.has(row.chatKey);
+    return Boolean(row.file && m.files.has(row.file));
+  }
+
+  /**
+   * The matching rows in tree order, at most MAX_REVEALED, to open up with reveal.
+   * @returns {Promise<Row[]>}
+   */
+  async matchingRows() {
+    if (!this.matches) return [];
+    /** @type {Row[]} */
+    const found = [];
+    const visit = async (/** @type {Row | undefined} */ parent) => {
+      for (const row of await this.getChildren(parent)) {
+        if (found.length >= MAX_REVEALED) return;
+        if (this.isMatch(row)) found.push(row);
+        // Older branches and recent conversations are opened only to reach a match.
+        if (row.kind === 'branch' || row.kind === 'older' || row.kind === 'session' || row.kind === 'conversations') await visit(row);
+      }
+    };
+    await visit(undefined);
+    return found;
   }
 
   refresh() {
@@ -48,6 +95,39 @@ class HandoffTree {
 
   /** @param {Row} [parent] */
   async getChildren(parent) {
+    const rows = await this.children(parent);
+    for (const row of rows) {
+      if (parent) this.parents.set(row, parent);
+      if (this.isMatch(row)) highlight(row, this.matches?.words || []);
+    }
+    return rows;
+  }
+
+  /** @param {Row} item */
+  getParent(item) {
+    return this.parents.get(item);
+  }
+
+  /**
+   * The session row for a saved handoff file (its latest or an earlier version), or undefined
+   * when it isn't listed, e.g. its branch is hidden by the current-branch filter.
+   * @param {string} file
+   * @returns {Promise<Row | undefined>}
+   */
+  async findHandoff(file) {
+    const has = (/** @type {Row} */ row) => row.session?.file === file || row.session?.versions.some((v) => v.file === file);
+    for (const top of await this.getChildren()) {
+      const branches = top.kind === 'older' ? await this.getChildren(top) : top.kind === 'branch' ? [top] : [];
+      for (const branch of branches) {
+        const found = (await this.getChildren(branch)).find(has);
+        if (found) return found;
+      }
+    }
+    return undefined;
+  }
+
+  /** @param {Row} [parent] */
+  async children(parent) {
     const dir = this.cwd();
     if (!dir) return []; // shows the "open a folder" welcome view
     if (!parent) return this.rootItems(dir);
@@ -124,6 +204,7 @@ class HandoffTree {
     item.iconPath = new vscode.ThemeIcon('note');
     item.contextValue = 'latest';
     item.resourceUri = vscode.Uri.file(file);
+    Object.assign(item, { file });
     item.command = { command: 'vscode.open', title: 'Open', arguments: [vscode.Uri.file(file)] };
     return item;
   }
@@ -134,7 +215,9 @@ class HandoffTree {
       const adapter = getProvider(id);
       if (!adapter?.listSessions) continue;
       for (const ref of await adapter.listSessions(dir, { limit: SESSIONS_PER_PROVIDER })) {
-        const item = new vscode.TreeItem(ref.title || ref.id.slice(0, 8));
+        /** @type {Row} */
+        const item = Object.assign(new vscode.TreeItem(ref.title || ref.id.slice(0, 8)), { chatKey: `${ref.provider}:${ref.id.slice(0, 8)}` });
+        item.id = `chat:${ref.provider}:${ref.id}`;
         item.description = `${adapter.label} · ${ago(ref.updatedAt)}`;
         item.tooltip = `${tildify(ref.path)}\nClick to create a handoff from this conversation`;
         item.iconPath = new vscode.ThemeIcon('comment');
@@ -198,7 +281,8 @@ function sessionItem(session, branch) {
  */
 function versionItem(version) {
   const when = new Date(version.at).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
-  const item = new vscode.TreeItem(when);
+  /** @type {Row} */
+  const item = Object.assign(new vscode.TreeItem(when), { kind: 'version', file: version.file });
   item.id = `version:${version.file}`;
   item.description = version.description;
   item.tooltip = tildify(version.file);
@@ -238,6 +322,31 @@ function sessionTooltip(session, branch, usage, context) {
   if (text) md.appendMarkdown('\n\n**Handoff:** ').appendText(handoffSize(text, context));
   md.appendMarkdown('\n\n').appendText(`${earlier ? `${earlier} earlier version${earlier === 1 ? '' : 's'} · ` : ''}${tildify(session.file)}`);
   return md;
+}
+
+/**
+ * Mark a row the search box matched: the matched words lit up in its label (the whole label
+ * when they are only in the text) and a coloured search icon.
+ * @param {Row} row
+ * @param {string[]} words  lower-case words the search matched
+ */
+function highlight(row, words) {
+  const label = typeof row.label === 'string' ? row.label : row.label?.label || '';
+  const lower = label.toLowerCase();
+  /** @type {[number, number][]} */
+  const ranges = [];
+  for (const w of words) {
+    for (let i = lower.indexOf(w); i >= 0; i = lower.indexOf(w, i + w.length)) ranges.push([i, i + w.length]);
+  }
+  /** @type {[number, number][]} overlapping ranges ("comp" in "compact") merged */
+  const merged = [];
+  for (const r of ranges.sort((a, b) => a[0] - b[0])) {
+    const last = merged[merged.length - 1];
+    if (last && r[0] <= last[1]) last[1] = Math.max(last[1], r[1]);
+    else merged.push(r);
+  }
+  row.label = { label, highlights: merged.length ? merged : [[0, label.length]] };
+  row.iconPath = new vscode.ThemeIcon('search', new vscode.ThemeColor('list.highlightForeground'));
 }
 
 /** A collapsed group row. */

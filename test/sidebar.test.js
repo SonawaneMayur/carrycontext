@@ -67,6 +67,18 @@ test('branches: the checked-out one first and open, idle ones under "Older branc
   const ids = (await walk(tree)).map((r) => r.id).filter(Boolean);
   assert.equal(new Set(ids).size, ids.length);
 
+  // A search result selects its row; its parents lead back up through "Older branches".
+  const [spikeBranch] = await tree.getChildren(older);
+  const [importer] = await tree.getChildren(spikeBranch);
+  const found = await tree.findHandoff(importer.session.file);
+  assert.equal(found.id, importer.id);
+  const chain = [];
+  for (let row = tree.getParent(found); row; row = tree.getParent(row)) chain.push(row.label);
+  assert.deepEqual(chain, ['spike/import', 'Older branches (1)']);
+  assert.equal(tree.getParent(root[1]), undefined, 'top-level rows have no parent');
+  assert.equal(await tree.findHandoff('/nowhere/x.md'), undefined);
+  assert.equal(await panel(cwd, { currentOnly: true }).findHandoff(importer.session.file), undefined, 'hidden by the branch filter');
+
   assert.deepEqual(labels(await panel(cwd, { currentOnly: true }).getChildren()), ['Latest handoff · main', 'main', 'Usage', 'Recent conversations']);
   git(cwd, 'checkout', '-q', '-b', 'feature/empty');
   assert.deepEqual(labels(await panel(cwd, { currentOnly: true }).getChildren()).slice(1, 2), ['No saved handoffs on feature/empty yet']);
@@ -89,6 +101,23 @@ test('one row per session opens its latest handoff; earlier versions are inside;
   const [earlier] = await tree.getChildren(session);
   assert.equal(earlier.description, 'Build the payments page');
   assert.equal(earlier.iconPath.id, 'history');
+  assert.equal((await tree.findHandoff(earlier.resourceUri.fsPath)).id, session.id, 'an earlier version finds its session row');
+
+  // Search matches are highlighted: the matched words in the label, or all of it, and a coloured icon.
+  tree.setMatches({ keys: ['claude:pay'], files: [earlier.resourceUri.fsPath, root[0].resourceUri.fsPath], words: ['pay'] });
+  const lit = await tree.matchingRows();
+  assert.deepEqual(lit.map((r) => r.id), [root[0].id, session.id, earlier.id, 'chat:claude:pay'], 'latest, session, the matching earlier version, and the chat');
+  assert.equal(tree.getParent(lit[3]).label, 'Recent conversations');
+  assert.deepEqual(lit[1].label, { label: 'Payments', highlights: [[0, 3]] });
+  assert.deepEqual(lit[2].label.highlights, [[0, lit[2].label.label.length]], 'no matched word in the label: all of it');
+  assert.deepEqual([lit[1].iconPath.id, lit[1].iconPath.color.id], ['search', 'list.highlightForeground']);
+  assert.deepEqual(tree.getParent(lit[2]).id, session.id, 'revealing it opens its session');
+  tree.setMatches({ keys: ['claude:pay'], files: [], words: ['pay', 'payments', 'men'] });
+  assert.deepEqual((await tree.getChildren(root[1]))[0].label.highlights, [[0, 8]], 'overlapping words are merged');
+  tree.setMatches(null);
+  assert.deepEqual(await tree.matchingRows(), []);
+  assert.equal((await tree.getChildren(root[1]))[0].label, 'Payments', 'cleared');
+  assert.equal(tree.getParent(session).label, 'Saved handoffs');
 
   assert.equal(session.tooltip, undefined, 'built when hovered');
   const hover = (await tree.resolveTreeItem(session)).tooltip.value.replace(/\\/g, '');

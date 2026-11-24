@@ -8,6 +8,13 @@ class TreeItem {
 }
 
 class ThemeIcon {
+  constructor(id, color) {
+    this.id = id;
+    this.color = color;
+  }
+}
+
+class ThemeColor {
   constructor(id) {
     this.id = id;
   }
@@ -40,4 +47,4 @@ class MarkdownString {
 const TreeItemCollapsibleState = { None: 0, Collapsed: 1, Expanded: 2 };
 const Uri = { file: (fsPath) => ({ scheme: 'file', fsPath }) };
 
-module.exports = { TreeItem, ThemeIcon, EventEmitter, MarkdownString, TreeItemCollapsibleState, Uri };
+module.exports = { TreeItem, ThemeIcon, ThemeColor, EventEmitter, MarkdownString, TreeItemCollapsibleState, Uri };

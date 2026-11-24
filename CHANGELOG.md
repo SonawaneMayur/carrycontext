@@ -4,6 +4,10 @@ All notable changes to CarryContext are listed here. The format follows [Keep a 
 
 ## [Unreleased]
 
+### Added
+
+- **Search box** at the top of the panel. It searches every Claude Code, Codex and Gemini chat in this folder as you type, chats with no handoff included, and every `.md`, `.json` and `.log` file in every folder of `.carrycontext` (earlier versions and copies of a handoff join their session), and tolerates typos (one per word up to seven letters, two from eight). Every-word matches come first, then partial ones; a match in the title ranks higher. Clicking a result opens its handoff, or creates one from the chat, and selects it in the Handoffs list below. As you type, every match is highlighted in that list (matched words lit up, with a search icon), down to the earlier versions that match, and its branch and groups are opened up. **Ask AI** sends your question and short, redacted excerpts of the best 20 matches (6 for Apple on-device) to the selected summarizer and links the sessions it names. Hidden when the summarizer is None. The box is a locked-down webview: no network, no remote content, results shown as plain text.
+
 ### Changed
 
 - **The free summary uses Claude's own compaction summary.** When Claude Code has compacted a chat, the default (no-LLM) handoff takes the goal, current state, pending tasks, next step and errors-and-fixes from Claude's newest summary, instead of your first prompt and the last reply. Work after the compaction still comes first, and a next step older than your latest request says so. Claude's verbatim list of your messages and its code snippets are left out. The header shows `heuristic + claude compaction summary (time)`. Chats that were never compacted are unchanged.
